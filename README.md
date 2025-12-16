@@ -41,7 +41,7 @@ kubernp.show_config()
 
 exp = kubernp.create_experiment()
 testweb = exp.create_deployment(name="testweb", image="nginx:latest", publish=[80])
-testweb.cmd("echo '<h1>Hello World</h1>' > /var/www/index.html")
+testweb.cmd("echo '<h1>Hello World</h1>' > /usr/share/nginx/html/index.html")
 url = testweb.get_url()
 
 import requests
