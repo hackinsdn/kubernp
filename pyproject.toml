@@ -1,0 +1,58 @@
+[build-system]
+requires = ["flit_core >=3.2,<4"]
+build-backend = "flit_core.buildapi"
+
+[project]
+name = "kubernp"
+version = "0.0.1"
+description = "KubeRNP Python Client Library and CLI Extensions"
+authors = [
+    { name = "Italo Valcy", email = "italovalcy@gmail.com" },    
+]
+readme = "README.md"
+requires-python = ">=3.11"
+license = {file = "LICENSE"}
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent"
+]
+dependencies = [
+    "kubernetes >= 34.1.0",
+    "ipython>=8.12.0",
+    "tabulate",
+    "pandas",
+]
+
+[project.optional-dependencies]
+test = [
+    "coverage >= 4.0.3",
+    "pytest >= 7.2.0",
+    "pytest-cov >= 4.0.0",
+]
+format = [
+    "black == 24.*",
+    "isort == 5.*",
+]
+
+[options.packages.find]
+where = "src"
+
+[tool.black]
+include = '\.py?$'
+
+[tool.isort]
+profile = "black"
+src_paths = ["src"]
+
+[tool.pytest.ini_options]
+addopts = "--cov=src --cov-report term-missing"
+testpaths = [
+    "tests"
+]
+
+[tool.coverage.run]
+branch = true
+omit = [ "tests/*" ]
+relative_files = true
+
