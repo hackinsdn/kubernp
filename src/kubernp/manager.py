@@ -11,16 +11,19 @@ import json
 import logging
 import os
 import traceback
+import uuid
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
-import pandas as pd
+import yaml
 from IPython import get_ipython
 from IPython.core.display_functions import display
-from tabulate import tabulate
 
 from kubernp.controllers.kubernetes import K8sController
+from kubernp.controllers.mininetsec import MininetSecController
+from kubernp.controllers.containerlab import ContainerlabController
 from kubernp.experiment import Experiment
+from kubernp.output import show_table
 
 
 class KubeRNPManager:
@@ -63,12 +66,14 @@ class KubeRNPManager:
 
         self.k8s = None
         self.log = None
+        self.mnsec = None
+        self.clab = None
 
         self.initialize()
 
     def initialize(self):
         self.setup_logging()
-        self.load_k8s()
+        self.setup_k8s()
 
     def setup_logging(self):
         self.log = logging.getLogger("kubernp")
@@ -88,13 +93,16 @@ class KubeRNPManager:
         console_handler.setLevel(logging.getLevelName(self.console_log_level))
         self.log.addHandler(console_handler)
 
-    def load_k8s(self):
+    def setup_k8s(self):
         try:
-            self.k8s = K8sController(self.kubeconfig, self.namespace)
+            self.k8s = K8sController(self, self.kubeconfig, self.namespace)
         except Exception as exc:
             msg = f"Error while loading kubernetes controller: {exc}"
             err = traceback.format_exc().replace("\n", ", ")
             self.log.error(msg + " -- " + err)
+            return
+        self.mnsec = MininetSecController(self)
+        self.c9s = ContainerlabController(self)
 
     def is_jupyter(self):
         """Helper function to determine if Python code is currently executing
@@ -113,9 +121,9 @@ class KubeRNPManager:
             return False
 
     def show_config(self, output=None, quiet=False):
-        return self.show_table(
+        return show_table(
             self.get_config(),
-            output=output,
+            output=output or self.output,
             quiet=quiet,
         )
 
@@ -129,175 +137,82 @@ class KubeRNPManager:
             "log_file": self.log_file,
         }
 
-    def create_show_table(self, data, fields=None, pretty_names_dict={}):
-        """
-        Based on FABRIC fabrictestbed-extensions package.
-
-        Form a table that we can display.
-        """
-        table = []
-        if fields is None:
-            for key, value in data.items():
-                if key in pretty_names_dict:
-                    table.append([pretty_names_dict[key], value])
-                else:
-                    table.append([key, value])
-        else:
-            for field in fields:
-                value = data[field]
-                if field in pretty_names_dict:
-                    table.append([pretty_names_dict[field], value])
-                else:
-                    table.append([field, value])
-
-        return table
-
-    def show_table(
-        self,
-        data,
-        output=None,
-        quiet=False,
-        fields=None,
-        title="",
-        pretty_names_dict={},
-    ):
-        """
-        Based on FABRIC fabrictestbed-extensions package.
-
-        Form a table that we can display.
-        """
-        if output is None:
-            output = self.output
-
-        table = self.create_show_table(
-            data, fields=fields, pretty_names_dict=pretty_names_dict
-        )
-
-        if output == "text" or output == "default":
-            return self.show_table_text(table, quiet=quiet)
-        elif output == "json":
-            return self.show_table_json(data, quiet=quiet)
-        elif output == "dict":
-            return self.show_table_dict(data, quiet=quiet)
-        elif output == "pandas" or output == "jupyter_default":
-            return self.show_table_jupyter(
-                table,
-                headers=fields,
-                title=title,
-                quiet=quiet,
-            )
-        else:
-            log.error(f"Unknown output type: {output}")
-
-    def show_table_text(self, table, quiet=False):
-        """
-        Based on FABRIC fabrictestbed-extensions package.
-
-        Make a table in text format.
-        """
-        printable_table = tabulate(table)
-        if not quiet:
-            print(f"\n{printable_table}")
-            return
-        return printable_table
-
-    def show_table_json(self, data, quiet=False):
-        """
-        Based on FABRIC fabrictestbed-extensions package.
-
-        Make a table in JSON format.
-        """
-        json_str = json.dumps(data, indent=4)
-
-        if not quiet:
-            print(f"{json_str}")
-            return
-
-        return json_str
-
-    def show_table_dict(self, data, quiet=False):
-        """
-        Based on FABRIC fabrictestbed-extensions package.
-
-        Show the table.
-        """
-        if not quiet:
-            print(f"{data}")
-            return
-
-        return data
-
-    def show_table_jupyter(
-        self, table, headers=None, title="", title_font_size="1.25em", quiet=False
-    ):
-        """
-        Based on FABRIC fabrictestbed-extensions package.
-
-        Make a table in text form suitable for Jupyter notebooks.
-
-        You normally will not use this method directly; you should
-        rather use :py:meth:`show_table()`.
-
-        :param table: A list of lists.
-        :param title: The table title.
-        :param title_font_size: Font size to use for the table title.
-        :param quiet: Setting this to `False` causes the table to be
-            displayed.
-
-        :return: a Pandas dataframe.
-        :rtype: pd.DataFrame
-        """
-        printable_table = pd.DataFrame(table)
-
-        properties = {
-            "text-align": "left",
-            "border": f"1px #202020 solid !important",
-        }
-
-        printable_table = printable_table.style.set_caption(title)
-        printable_table = printable_table.set_properties(**properties, overwrite=False)
-        printable_table = printable_table.hide(axis="index")
-        printable_table = printable_table.hide(axis="columns")
-
-        printable_table = printable_table.set_table_styles(
-            [
-                {
-                    "selector": "tr:nth-child(even)",
-                    "props": [
-                        ("background", "#dbf3ff"),
-                        ("color", "#202020"),
-                    ],
-                }
-            ],
-            overwrite=False,
-        )
-        printable_table = printable_table.set_table_styles(
-            [
-                {
-                    "selector": "tr:nth-child(odd)",
-                    "props": [
-                        ("background", "#ffffff"),
-                        ("color", "#202020"),
-                    ],
-                }
-            ],
-            overwrite=False,
-        )
-
-        caption_props = [
-            ("text-align", "center"),
-            ("font-size", "150%"),
-        ]
-
-        printable_table = printable_table.set_table_styles(
-            [{"selector": "caption", "props": caption_props}], overwrite=False
-        )
-
-        if not quiet:
-            display(printable_table)
-            return
-
-        return printable_table
-
     def create_experiment(self, **kwargs):
-        return Experiment(self.k8s, **kwargs)
+        return Experiment(self, **kwargs)
+
+    def create_experiment_from_file(self, filename, name=None, **kwargs):
+        """
+        Create a Kubernetes experiment/resources based on a file. JSON and YAML
+        formats are accepted. We apply some heuristics to try to identify if
+        experiment being created is based on HackInSDN/Mininet-Sec scenario or
+        ContainerLab scenario.
+
+        Parameters:
+        :param filename: path to the file that describes the experiment to be
+            created (manifest file), YAML or JSON. It can be a standard
+            Kubernetes manifest with multiple resources, a Mininet-Sec/HackInSDN
+            manifest, a ContainerLab topology.
+        :param name: Optional. String with the experiment name
+
+        Additional Parameters:
+        :param mnsec_image: name of the mininet-sec image (defaults to
+            hackinsdn/mininet-sec)
+        """
+        try:
+            content = Path(filename).expanduser().read_text()
+        except Exception as exc:
+            print(exc)
+            return None
+        try:
+            objs = json.loads(content)
+            objs = [objs] if isinstance(objs, dict) else objs
+        except:
+            try:
+                objs = list(yaml.safe_load_all(content))
+            except:
+                print("Failed to load content from file: must be YAML or JSON")
+                return None
+        if self.mnsec.is_mininetsec(objs):
+            objs, new_name = self.mnsec.prepare_lab(content, **kwargs)
+            name = new_name or new_name
+        elif self.c9s.is_containerlab(filename):
+            objs, new_name = self.c9s.prepare_lab(filename, **kwargs)
+            name = name or new_name
+
+        exp = self.create_experiment(name=name)
+
+        exp.create_resources(objs, as_is=True)
+
+        return exp
+
+    def list_experiments(self):
+        try:
+            results = self.k8s.get_resource("v1", "ConfigMap", None, label_selector="kubernp/kind=Experiment").items
+        except:
+            results = []
+        experiments = {"NAME": [], "DESCRIPTION": [], "CREATED_AT": [], "#RESOURCES": []}
+        for exp in results:
+            experiments["NAME"].append(exp.metadata.name)
+            experiments["DESCRIPTION"].append(exp.data.get("description") or "--")
+            experiments["CREATED_AT"].append(exp.metadata.creationTimestamp)
+            experiments["#RESOURCES"].append(len(json.loads(exp.data.get("resources", '[]'))))
+
+        return show_table(experiments, output=self.output)
+
+    def load_experiment(self, name, skip_errors=False):
+        return Experiment(self, name=name, load=True, skip_errors=skip_errors)
+
+    def delete_experiment(self, exp):
+        if isinstance(exp, str):
+            try:
+                exp = Experiment(self, name=exp, load=True)
+            except Exception as exc:
+                self.log.error(f"Failed to load Experiment for removal: {exc}")
+                return
+        if not isinstance(exp, Experiment):
+            raise ValueError("Argument must be a string (experiment name) or Experiment instance")
+        exp.delete_resources(force=True)
+        try:
+            self.k8s.delete_resource("v1", "ConfigMap", exp.name)
+        except:
+            pass
