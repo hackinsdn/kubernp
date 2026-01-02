@@ -10,6 +10,7 @@ import tarfile
 import tempfile
 import time
 import base64
+import sys
 from pathlib import Path
 from typing import Optional
 
@@ -17,7 +18,6 @@ from kubernetes.client.exceptions import ApiException
 
 from kubernp.utils import recursive_merge, validate_k8s_name, format_duration
 from kubernp.output import show_table
-from kubernetes.stream import stream
 from kubernp.certutils import generate_selfsigned_cert
 
 def create_tar(source_path: Path, tar_path: Path) -> None:
@@ -64,7 +64,7 @@ class Resource:
             return [pod.to_dict() for pod in pods]
         return None
 
-    def exec(self, cmd, pod_name=None):
+    def exec(self, cmd, pod_name=None, output=True):
         pod_name = self.get_pod_name(pod_name)
         if not pod_name:
             self.log.error(f"Resource {self.kind}/{self.name} does not support exec")
@@ -73,19 +73,29 @@ class Resource:
         cmd = " ".join(cmd) if isinstance(cmd, list) else cmd
         if cmd[-1] == "&":
             cmd = cmd[:-1] + ">/dev/null 2>&1 & echo $!"
-        cmd = ["/bin/sh", "-c", cmd]
-        resp = stream(
-            self.experiment.k8s.v1_api.connect_get_namespaced_pod_exec,
-            name=pod_name,
-            namespace=self.experiment.k8s.namespace,
+        # TODO: when output=True, follow example on real-time-k8s-stream.txt
+        stream = self.experiment.k8s.pod_exec(
+            pod_name=pod_name,
+            command=["/bin/sh", "-c", cmd],
             container=self.name,
-            command=cmd,
             stderr=True,
             stdin=False,
             stdout=True,
             tty=False,
+            _preload_content=False,  # Crucial for streaming
         )
-        return resp
+        resp = ""
+        while stream.is_open():
+            data = stream.read_stdout(10)
+            if stream.is_open():
+                if len(data or "")>0:
+                    if output:
+                        sys.stdout.write(data)
+                        sys.stdout.flush()
+                    else:
+                        resp += data
+        if not output:
+            return resp
 
     def list_pods(self):
         pods = self.get_k8s_pods()
@@ -144,7 +154,7 @@ class Resource:
                         endpoints[port_name].append(f"{node_ip}:{port.nodePort}")
         return endpoints
 
-    def upload_files(self, local_path, pod_name=None, chunk_size=1024*1024):
+    def upload_files(self, local_path, pod_name=None, chunk_size=1024*1024, quiet=False):
         pod_name = self.get_pod_name(pod_name)
         if not pod_name:
             self.log.error(f"Resource {self.kind}/{self.name} does not support uploads")
@@ -156,17 +166,15 @@ class Resource:
 
             exec_command = ["tar", "xvf", "-", "-C", "/uploads"]
 
-            resp = stream(
-                self.experiment.k8s.v1_api.connect_get_namespaced_pod_exec,
-                name=pod_name,
-                namespace=self.experiment.k8s.namespace,
-                container="upload-mgmt-sidecar",
+            resp = self.experiment.k8s.pod_exec(
+                pod_name=pod_name,
                 command=exec_command,
+                container="upload-mgmt-sidecar",
                 stderr=True,
                 stdin=True,
                 stdout=True,
                 tty=False,
-                _preload_content=False,
+                _preload_content=False,  # Crucial for streaming
             )
 
             sent = 0
@@ -185,17 +193,19 @@ class Resource:
                     percent = (sent / total_size) * 100
                     speed = sent / elapsed if elapsed > 0 else 0
 
-                    print(
-                        f"\rUploading: {percent:6.2f}% "
-                        f"({sent / (1024**2):.2f} MB / "
-                        f"{total_size / (1024**2):.2f} MB) "
-                        f"@ {speed / (1024**2):.2f} MB/s",
-                        end="",
-                        flush=True,
-                    )
+                    if not quiet:
+                        print(
+                            f"\rUploading: {percent:6.2f}% "
+                            f"({sent / (1024**2):.2f} MB / "
+                            f"{total_size / (1024**2):.2f} MB) "
+                            f"@ {speed / (1024**2):.2f} MB/s",
+                            end="",
+                            flush=True,
+                        )
 
             resp.close()
-            print("\nUpload completed! Saved to /uploads")
+            if not quiet:
+                print("\nUpload completed! Saved to /uploads")
 
     def scale(self, replica_count):
         """
@@ -283,6 +293,15 @@ class Resource:
         except Exception as exc:
             self.log.error("Failed to create Ingress. Skipping")
 
+    def wait_running(self, timeout=60, step=2, verbose=False):
+        """Wait for a Pod or Deployment to be ready/running."""
+        if self.kind == "Pod":
+            return self.experiment.k8s.wait_pod_running(self.name, timeout=timeout, step=step, verbose=verbose)
+        if self.kind == "Deployment":
+            return self.experiment.k8s.wait_deployment_running(self.name, timeout=timeout, step=step, verbose=verbose)
+        self.log.error(f"Resource {self.kind}/{self.name} does not support wait running.")
+        return False, "not supported"
+
 
 class Experiment:
     """Abstract and encapsulate an Experiment with resources."""
@@ -298,6 +317,7 @@ class Experiment:
         self.expiration = expiration
 
         self.k8s_dict = None
+        self.uid = None
         self.resources = {}
         self.resource_names = {}
         self.log = logging.getLogger("kubernp")
@@ -309,8 +329,7 @@ class Experiment:
                 self.save()
             self.uid = self.k8s_dict["metadata"]["uid"]
         except Exception as exc:
-            action = "load" if load else "create"
-            self.log.error(f"Failed to {action} Expirement: {exc}")
+            self.log.error(f"Failed to create/load Expirement: {exc}")
             return
 
         self.create_resources(resources)
@@ -332,8 +351,7 @@ class Experiment:
                 "resources": json.dumps(list(self.resources.keys())),
             },
         }
-        result = self.k8s.create_from_dict(configmap, apply=apply)
-        self.k8s_dict = result
+        self.k8s_dict = self.k8s.create_from_dict(configmap, apply=apply)
 
     def load(self, skip_errors=False):
         try:
@@ -1281,44 +1299,37 @@ class Experiment:
 
     def list_pod(self, name=None, **kwargs):
         """List Experiment Pods."""
-        if "label_selector" not in kwargs:
-            kwargs["label_selector"] = f"kubernp/Experiment={self.name}"
+        kwargs["ownership_selector"] = self.resource_names
         return self.k8s.list_pod(name=name, **kwargs)
 
     def list_deployment(self, name=None, **kwargs):
         """List Experiment Deployment."""
-        if "label_selector" not in kwargs:
-            kwargs["label_selector"] = f"kubernp/Experiment={self.name}"
+        kwargs["ownership_selector"] = self.resource_names
         return self.k8s.list_deployment(name=name, **kwargs)
 
     def list_service(self, name=None, **kwargs):
         """List Experiment Services."""
-        if "label_selector" not in kwargs:
-            kwargs["label_selector"] = f"kubernp/Experiment={self.name}"
+        kwargs["ownership_selector"] = self.resource_names
         return self.k8s.list_service(name=name, **kwargs)
 
     def list_ingress(self, name=None, **kwargs):
         """List Experiment Ingress."""
-        if "label_selector" not in kwargs:
-            kwargs["label_selector"] = f"kubernp/Experiment={self.name}"
+        kwargs["ownership_selector"] = self.resource_names
         return self.k8s.list_ingress(name=name, **kwargs)
 
     def list_configmap(self, name=None, **kwargs):
         """List Experiment ConfigMap."""
-        if "label_selector" not in kwargs:
-            kwargs["label_selector"] = f"kubernp/Experiment={self.name}"
+        kwargs["ownership_selector"] = self.resource_names
         return self.k8s.list_configmap(name=name, **kwargs)
 
     def list_secret(self, name=None, **kwargs):
         """List Experiment Secret."""
-        if "label_selector" not in kwargs:
-            kwargs["label_selector"] = f"kubernp/Experiment={self.name}"
+        kwargs["ownership_selector"] = self.resource_names
         return self.k8s.list_secret(name=name, **kwargs)
 
     def list_pvc(self, name=None, **kwargs):
         """List Experiment PersistentVolumeClaims."""
-        if "label_selector" not in kwargs:
-            kwargs["label_selector"] = f"kubernp/Experiment={self.name}"
+        kwargs["ownership_selector"] = self.resource_names
         return self.k8s.list_pvc(name=name, **kwargs)
 
     def get_resource(self, name_kind):
@@ -1352,3 +1363,7 @@ class Experiment:
             for kind, name in zip(resources["KIND"], resources["RESOURCE NAME"]):
                 my_resources.add(f"{kind}/{name}")
         self.k8s.list_events(resources=my_resources)
+
+    def finish(self):
+        """Finish this experiment and delete resources."""
+        self.kubernp.delete_experiment(self)

@@ -1,6 +1,7 @@
 """Output module."""
 import pandas as pd
 from tabulate import tabulate
+from IPython.core.display_functions import display
 
 def show_table(
     data,
@@ -10,6 +11,7 @@ def show_table(
     fields=None,
     title="",
     pretty_names_dict={},
+    empty_msg="No content",
 ):
     """
     Based on FABRIC fabrictestbed-extensions package.
@@ -22,7 +24,7 @@ def show_table(
     )
 
     if output == "text" or output == "default":
-        return show_table_text(table, quiet=quiet, headers=table_headers)
+        return show_table_text(table, quiet=quiet, headers=table_headers, empty_msg=empty_msg)
     elif output == "json":
         return show_table_json(data, quiet=quiet)
     elif output == "dict":
@@ -33,11 +35,12 @@ def show_table(
             headers=fields,
             title=title,
             quiet=quiet,
+            empty_msg=empty_msg,
         )
     else:
         log.error(f"Unknown output type: {output}")
 
-def show_table_text(table, quiet=False, headers=[]):
+def show_table_text(table, quiet=False, headers=[], empty_msg="No content"):
     """
     Based on FABRIC fabrictestbed-extensions package.
 
@@ -45,7 +48,10 @@ def show_table_text(table, quiet=False, headers=[]):
     """
     printable_table = tabulate(table, headers=headers)
     if not quiet:
-        print(f"{printable_table}")
+        if table:
+            print(f"{printable_table}")
+        elif empty_msg:
+            print(empty_msg)
         return
     return printable_table
 
@@ -76,7 +82,7 @@ def show_table_dict(data, quiet=False):
     return data
 
 def show_table_jupyter(
-    table, headers=None, title="", title_font_size="1.25em", quiet=False
+    table, headers=None, title="", title_font_size="1.25em", quiet=False, empty_msg="No content"
 ):
     """
     Based on FABRIC fabrictestbed-extensions package.
@@ -91,6 +97,7 @@ def show_table_jupyter(
     :param title_font_size: Font size to use for the table title.
     :param quiet: Setting this to `False` causes the table to be
         displayed.
+    :param empty_msg: String message to display when empty.
 
     :return: a Pandas dataframe.
     :rtype: pd.DataFrame
@@ -142,7 +149,10 @@ def show_table_jupyter(
     )
 
     if not quiet:
-        display(printable_table)
+        if table:
+            display(printable_table)
+        elif empty_msg:
+            print(empty_msg)
         return
 
     return printable_table

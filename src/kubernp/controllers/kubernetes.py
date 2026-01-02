@@ -3,9 +3,10 @@
 import time
 import logging
 
-from kubernetes import config, client
+from kubernetes import config, client, watch
 from kubernetes.client.exceptions import ApiException
 from kubernetes.dynamic.client import DynamicClient
+from kubernetes.stream import stream
 
 from kubernp.utils import format_duration
 from kubernp.output import show_table
@@ -14,7 +15,7 @@ from kubernp.output import show_table
 class K8sController():
     def __init__(self, kubernp, kubeconfig, namespace):
         self.kubernp = kubernp
-        self.kubeconfig = kubeconfig
+        self.kubeconfig = str(kubeconfig)
         self.namespace = namespace
 
         self.v1_api = None
@@ -47,7 +48,11 @@ class K8sController():
         self.k8s_client = client.ApiClient()
 
     def create_from_dict(self, resource, apply=False):
-        self.log.info(f"Creating Kubernetes resource: {resource=} {apply=}")
+        """
+        Create Kubernetes resource from a dict. The resource can be created
+        by using the create method (default) or apply.
+        """
+        self.log.debug(f"Creating Kubernetes resource: {resource=} {apply=}")
         resource_api = DynamicClient(self.k8s_client).resources.get(
             api_version=resource["apiVersion"], kind=resource["kind"]
         )
@@ -128,7 +133,7 @@ class K8sController():
                     role = label_key.split("/")[-1]
                     roles.add(role)
             for taint in (node.spec.taints or []):
-                if taint.get("key") == "node-role.kubernetes.io/control-plane" and taint.get("effect") == "NoSchedule":
+                if taint.key == "node-role.kubernetes.io/control-plane" and taint.effect == "NoSchedule":
                     roles.add("control-plane")
                     break
             else:
@@ -208,6 +213,17 @@ class K8sController():
 
         show_table(events_table, output=self.kubernp.output)
 
+    def _check_ownership_filter(self, item, owners):
+        """
+        Check ownership: if item has any ownerReference belonging to owners.
+        """
+        if not owners:
+            return True
+        for owner_ref in (item.metadata.ownerReferences or []):
+            if f"{owner_ref.kind}/{owner_ref.name}" in owners:
+                return True
+        return False
+
     def list_resources(self, api_version, kind, name, **kwargs):
         """
         List Kubernetes resources by api_version/kind/name.
@@ -216,6 +232,7 @@ class K8sController():
 
         :param as_dict: Boolean. Return the list of resources instead of printing
         :param label_selector: filter the resources by labels
+        :param ownership_selector: filter resources by ownerReferences
         :param extra_columns: extra columns to be added. The format is a dict
             with the keys being the column name and the value being the field
             specification expressed as a JSONPath expression (example 
@@ -226,8 +243,11 @@ class K8sController():
         if extra_columns := kwargs.pop("extra_columns", {}):
             for col in extra_columns:
                 resource_table[col] = []
+        owners = set(kwargs.pop("ownership_selector", []))
         resources = self.get_resource(api_version, kind, name, **kwargs)
         for item in resources.items:
+            if not self._check_ownership_filter(item, owners):
+                continue
             if kwargs.get("as_dict"):
                 result.append(item)
                 continue
@@ -247,9 +267,10 @@ class K8sController():
         if kwargs.get("as_dict"):
             return result
 
-        show_table(resource_table, output=self.kubernp.output)
-        if not resource_table["KIND/NAME"]:
-            print(f"No resources found in {self.namespace} namespace.")
+        if resource_table["KIND/NAME"]:
+            show_table(resource_table, output=self.kubernp.output)
+        else:
+            print(f"No {kind} found in {self.namespace} namespace.")
 
     def list_pod(self, name=None, **kwargs):
         """
@@ -362,11 +383,111 @@ class K8sController():
         if resource.kind in ["PersistentVolumeClaim"]:
             return resource.status.phase
         if resource.kind == "Pod":
-            for status in resource.status.containerStatuses:
+            if resource.metadata.deletionTimestamp:
+                return "Terminating"
+            for status in (resource.status.containerStatuses or []):
                 if not status.ready:
                     try:
                         return status.state.waiting.reason
                     except:
                         return "NotReady"
             return resource.status.phase
+        if resource.kind == "Topology":
+            total = ready = 0
+            for node, status in resource.status.nodeReadiness.items():
+                total += 1
+                ready += status == "ready"
+            return f"{ready}/{total}"
         return resource.status or "--"
+
+    def wait_deployment_running(self, name, timeout=60, step=2, verbose=False):
+        """
+        Waits for a Kubernetes deployment to be in the 'running' state (available).
+        """
+        start_time = time.time()
+
+        while time.time() - start_time < timeout:
+            try:
+                deployment_status = self.apps_v1_api.read_namespaced_deployment_status(
+                    name=name,
+                    namespace=self.namespace
+                )
+
+                spec_replicas = deployment_status.spec.replicas
+                status_available_replicas = deployment_status.status.available_replicas
+
+                if spec_replicas is not None and status_available_replicas is not None:
+                    if status_available_replicas == spec_replicas:
+                        if verbose:
+                            print(f"Deployment '{name}' is running and ready.")
+                        return True, "ok"
+
+                if verbose:
+                    print(
+                        f"Waiting for deployment '{name}'... "
+                        f"Available replicas: {status_available_replicas or 0}/{spec_replicas or 0}"
+                    )
+
+            except ApiException as api_exc:
+                return False, f"Error accessing Deployment status: {api_exc.reason}"
+
+            time.sleep(step)
+
+        return False, f"Timeout waiting for '{name}' to become ready."
+
+    def wait_pod_running(self, name, timeout=60, step=2, verbose=False):
+        """
+        Waits for a specific pod to reach the 'Running' phase.
+        """
+        w = watch.Watch()
+        start_time = time.time()
+
+        try:
+            for event in w.stream(func=self.v1_api.list_namespaced_pod,
+                                  namespace=self.namespace,
+                                  timeout_seconds=timeout):
+
+                obj = event['object']
+                if obj.metadata.name == name:
+                    pod_phase = obj.status.phase
+
+                    if pod_phase == "Running":
+                        # Check if all containers are also ready
+                        all_ready = True
+                        for container_status in obj.status.container_statuses:
+                            if not container_status.ready:
+                                all_ready = False
+                                break
+
+                        if all_ready:
+                            end_time = time.time()
+                            if verbose:
+                                print(f"Pod '{name}' is Running and Ready in {end_time - start_time:.2f} seconds.")
+                            w.stop()
+                            return True, "ok"
+
+                    elif pod_phase == "Failed" or pod_phase == "Succeeded":
+                        w.stop()
+                        return False, f"Pod '{name}' reached terminal phase: {pod_phase}. Stopping wait."
+
+        except watch.WatchTermination:
+            return False, f"Watch stream terminated or timed out after {timeout} seconds."
+        except ApiException as api_exc:
+            return False, f"Error accessing Pod status: {api_exc.reason}"
+
+        return False, "Timeout waiting for Pod to be running"
+
+    def pod_exec(self, pod_name, command, container=None, stderr=True, stdin=True, stdout=True, tty=True, _preload_content=True):
+        """
+        Establish a websocket with Pod to execute command and return a stream.
+        """
+        return stream(
+            self.v1_api.connect_get_namespaced_pod_exec,
+            pod_name,
+            self.namespace,
+            container=container,
+            command=command,
+            stderr=stderr, stdin=stdin,
+            stdout=stdout, tty=tty,
+            _preload_content=_preload_content
+        )

@@ -17,7 +17,6 @@ from pathlib import Path
 
 import yaml
 from IPython import get_ipython
-from IPython.core.display_functions import display
 
 from kubernp.controllers.kubernetes import K8sController
 from kubernp.controllers.mininetsec import MininetSecController
@@ -40,7 +39,8 @@ class KubeRNPManager:
     ):
         """
         :param kubeconfig: Path to kubernetes configuration file. Defaults to
-            ``"${HOME}/.kube/config"``.
+            ``"${HOME}/.kube/config"``. You can use the KUBECONFIG environment
+            variable to overwrite the default value.
         :param namespace: Kubernetes Namespace to be used. If not provided, it
             will try to be loaded from ``kubeconfig``. If both fails, an error
             is raised.
@@ -55,7 +55,7 @@ class KubeRNPManager:
         :param console_log_level: Log level for console messages. Defaults to
             ``"ERROR"`` (see ``file_log_level`` to other values).
         """
-        self.kubeconfig = str(kubeconfig or Path.home() / ".kube" / "config")
+        self.kubeconfig = Path(kubeconfig or os.environ.get("KUBECONFIG", "~/.kube/config"))
         self.namespace = namespace
         self.output = output
         if not self.output:
@@ -157,32 +157,52 @@ class KubeRNPManager:
         Additional Parameters:
         :param mnsec_image: name of the mininet-sec image (defaults to
             hackinsdn/mininet-sec)
+        :param quiet: Boolean. When true do not print information on each step
         """
+        if not kwargs.get("quiet", False):
+            print(f"Loading content from file {filename}")
         try:
             content = Path(filename).expanduser().read_text()
         except Exception as exc:
             print(exc)
             return None
-        try:
-            objs = json.loads(content)
-            objs = [objs] if isinstance(objs, dict) else objs
-        except:
-            try:
-                objs = list(yaml.safe_load_all(content))
-            except:
-                print("Failed to load content from file: must be YAML or JSON")
-                return None
-        if self.mnsec.is_mininetsec(objs):
-            objs, new_name = self.mnsec.prepare_lab(content, **kwargs)
-            name = new_name or new_name
+        if self.mnsec.is_mininetsec(content):
+            if not kwargs.get("quiet", False):
+                print(f"Detected a Mininet-Sec manifest. Preparing the lab...")
+            objs = self.mnsec.prepare_lab(content, **kwargs)
+            if not objs:
+                print(f"Failed to convert Mininet-sec Lab")
+                return
         elif self.c9s.is_containerlab(filename):
-            objs, new_name = self.c9s.prepare_lab(filename, **kwargs)
-            name = name or new_name
+            if not kwargs.get("quiet", False):
+                print(f"Detected a Containerlab topology. Converting to clab...")
+            objs = self.c9s.prepare_lab(filename, **kwargs)
+            if not objs:
+                print(f"Failed to convert Containerlab Lab")
+                return
+        else:
+            if not kwargs.get("quiet", False):
+                print(f"Generic Kubernetes manifest. Loading resources...")
+            try:
+                objs = json.loads(content)
+                objs = [objs] if isinstance(objs, dict) else objs
+            except:
+                try:
+                    objs = list(yaml.safe_load_all(content))
+                except:
+                    print("Failed to load content from file: must be YAML or JSON")
+                    return None
 
+        if not kwargs.get("quiet", False):
+            print(f"Creating experiment...")
         exp = self.create_experiment(name=name)
 
+        if not kwargs.get("quiet", False):
+            print(f"Creating resources...")
         exp.create_resources(objs, as_is=True)
 
+        if not kwargs.get("quiet", False):
+            print(f"All done!")
         return exp
 
     def list_experiments(self):
@@ -197,7 +217,7 @@ class KubeRNPManager:
             experiments["CREATED_AT"].append(exp.metadata.creationTimestamp)
             experiments["#RESOURCES"].append(len(json.loads(exp.data.get("resources", '[]'))))
 
-        return show_table(experiments, output=self.output)
+        return show_table(experiments, output=self.output, empty_msg=f"No experiments found in namespace {self.k8s.namespace}.")
 
     def load_experiment(self, name, skip_errors=False):
         return Experiment(self, name=name, load=True, skip_errors=skip_errors)

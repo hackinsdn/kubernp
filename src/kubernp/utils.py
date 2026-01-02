@@ -23,24 +23,28 @@ def validate_k8s_name(name):
     return name
 
 
-def recursive_merge(dict1, dict2):
+def recursive_merge(dict1, dict2, merge_list=False):
     """
     Recursively merges dict2 into dict1.
 
     For conflicts:
     - If both values are dictionaries, they are merged recursively.
+    - For Lists: Appended together (to handle binds/ports).
     - Otherwise, the value from dict2 overwrites the value from dict1.
     """
-    merged = dict1.copy()
     for key, value in dict2.items():
-        if key in merged and isinstance(merged[key], dict) and isinstance(value, dict):
+        if key in dict1 and isinstance(dict1[key], dict) and isinstance(value, dict):
             # If both key values are dicts, merge them recursively
-            merged[key] = recursive_merge(merged[key], value)
+            recursive_merge(dict1[key], value, merge_list=merge_list)
+        elif merge_list and isinstance(value, list) and key in dict1 and isinstance(dict1[key], list):
+            # Merge lists (e.g., combining kind binds with node binds)
+            dict1[key] = dict1[key] + [item for item in value if item not in dict1[key]]
         else:
             # Otherwise, overwrite the value in dict1 with the value from dict2
-            merged[key] = value
-            
-    return merged
+            dict1[key] = value
+
+    return dict1
+
 
 def format_duration(input_date) -> str:
     """

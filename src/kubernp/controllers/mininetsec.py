@@ -18,6 +18,7 @@ class MininetSecController:
         """
         self.kubernp = kubernp
         self.k8s = self.kubernp.k8s
+        self.log = self.kubernp.log
 
     def create_kubeconfig_secret(self, name, kubeconfig):
         """
@@ -84,7 +85,7 @@ class MininetSecController:
         if idx != -1:
             del deployment["spec"]["template"]["spec"]["containers"][0]["volumeMounts"][idx]
 
-    def is_mininetsec(self, resources, **kwargs):
+    def is_mininetsec(self, content, **kwargs):
         """
         Apply some heuristics and validations to try to identify if the request
         is for a Mininet-Sec/HackInSDN scenario.
@@ -93,6 +94,10 @@ class MininetSecController:
         :param mnsec_image: docker image used for Mininet-Sec (defaults to
             hackinsdn/mininet-sec)
         """
+        try:
+            resources = yaml.safe_load_all(content)
+        except:
+            return False
         mnsec_image = kwargs.get("mnsec_image", "hackinsdn/mininet-sec")
         for doc in resources:
             if doc.get("kind") == "Deployment" and mnsec_image in doc["spec"]["template"]["spec"]["containers"][0]["image"]:
@@ -108,6 +113,7 @@ class MininetSecController:
         :param mnsec_image: docker image used for Mininet-Sec (defaults to
             hackinsdn/mininet-sec)
         """
+        self.log.info(" - Mininet-Sec: replate token strings...")
         mnsec_image = kwargs.get("mnsec_image", "hackinsdn/mininet-sec")
         pod_hash = uuid.uuid4().hex[:10]
         content = content.replace("${pod_hash}", pod_hash)
@@ -117,6 +123,7 @@ class MininetSecController:
         content = content.replace("${allowed_nodes}", str(allowed_nodes))
         content = content.replace("${allowed_nodes_str}", ",".join(allowed_nodes))
 
+        self.log.info(" - Mininet-Sec: loading resources and adding kubeconfig secret...")
         docs = []
         # create kubeconfig as a secret for Mininet-Sec to allow creating pods
         sec_name = f"sec-kubeconfig-{pod_hash}"
@@ -126,4 +133,6 @@ class MininetSecController:
             if doc.get("kind") == "Deployment" and mnsec_image in doc["spec"]["template"]["spec"]["containers"][0]["image"]:
                 self.update_deployment_volume(doc, sec_name)
             docs.append(doc)
-        return docs, f"mnsec-{pod_hash}"
+
+        self.log.info(" - Mininet-Sec: all done!")
+        return docs
