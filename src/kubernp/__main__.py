@@ -32,6 +32,16 @@ def cli(ctx, **kwargs):
 @click.pass_obj
 def shell(kubernp, pod, container, shell):
     """Start a shell in a container.."""
+    if pod.lower().startswith("pod/"):
+        _, pod = pod.split("/")
+    elif pod.lower().startswith("deployment/"):
+        # TODO: get pods from deployment
+        print("Not implemented")
+        return
+    elif pod.lower().startswith("job/"):
+        # TODO: get pods from Job
+        print("Not implemented")
+        return
     stream = kubernp.k8s.pod_exec(
         pod_name=pod,
         command=["/bin/bash"],

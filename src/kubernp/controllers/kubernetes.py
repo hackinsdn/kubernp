@@ -56,6 +56,7 @@ class K8sController():
         resource_api = DynamicClient(self.k8s_client).resources.get(
             api_version=resource["apiVersion"], kind=resource["kind"]
         )
+        error = None
         try:
             if apply:
                 resp = resource_api.server_side_apply(
@@ -67,10 +68,9 @@ class K8sController():
             else:
                 resp = resource_api.create(resource, namespace=self.namespace)
         except ApiException as api_exc:
-            self.log.error(f"Failed to create resource reason={api_exc.reason}: {api_exc.body}")
-            resp = None
-        if not resp:
-            raise Exception("Failed to create Kubernetes resource")
+            error = f"Failed to create Kubernetes resource: reason={api_exc.reason} body={api_exc.body}"
+        if error:
+            raise Exception(error)
         return resp.to_dict()
 
     def delete_resource(self, api_version, kind, name):
@@ -219,6 +219,8 @@ class K8sController():
         """
         if not owners:
             return True
+        if f"{item.kind}/{item.metadata.name}" in owners:
+            return True
         for owner_ref in (item.metadata.ownerReferences or []):
             if f"{owner_ref.kind}/{owner_ref.name}" in owners:
                 return True
@@ -239,7 +241,8 @@ class K8sController():
             '.metadata.name' or 'len(item.status.containerStatuses)')
         """
         resource_table = {"KIND/NAME": [], "STATUS": [], "AGE": []}
-        result = []
+        result_dict = {}
+        result_list = []
         if extra_columns := kwargs.pop("extra_columns", {}):
             for col in extra_columns:
                 resource_table[col] = []
@@ -249,7 +252,10 @@ class K8sController():
             if not self._check_ownership_filter(item, owners):
                 continue
             if kwargs.get("as_dict"):
-                result.append(item)
+                result_dict[item.metadata.name] = item.to_dict()
+                continue
+            if kwargs.get("as_list"):
+                result_list.append(item)
                 continue
             resource_table["KIND/NAME"].append(f"{item.kind}/{item.metadata.name}")
             resource_table["STATUS"].append(self.try_parse_status(item))
@@ -265,7 +271,10 @@ class K8sController():
                     resource_table[col].append("(error)")
 
         if kwargs.get("as_dict"):
-            return result
+            return result_dict
+
+        if kwargs.get("as_list"):
+            return result_list
 
         if resource_table["KIND/NAME"]:
             show_table(resource_table, output=self.kubernp.output)
@@ -290,6 +299,13 @@ class K8sController():
         (example label_selector="app=xpto-foobar,mylabel.k8s.io/test=123")
         """
         return self.list_resources("apps/v1", "Deployment", name, **kwargs)
+
+    def list_replicaset(self, name=None, **kwargs):
+        """
+        List Kubernetes ReplicaSet. You can filter by label selector
+        (example label_selector="app=xpto-foobar,mylabel.k8s.io/test=123")
+        """
+        return self.list_resources("apps/v1", "ReplicaSet", name, **kwargs)
 
     def list_configmap(self, name=None, **kwargs):
         """
@@ -481,13 +497,41 @@ class K8sController():
         """
         Establish a websocket with Pod to execute command and return a stream.
         """
-        return stream(
-            self.v1_api.connect_get_namespaced_pod_exec,
-            pod_name,
-            self.namespace,
-            container=container,
-            command=command,
-            stderr=stderr, stdin=stdin,
-            stdout=stdout, tty=tty,
-            _preload_content=_preload_content
+        error = None
+        try:
+            resp = stream(
+                self.v1_api.connect_get_namespaced_pod_exec,
+                pod_name,
+                self.namespace,
+                container=container,
+                command=command,
+                stderr=stderr, stdin=stdin,
+                stdout=stdout, tty=tty,
+                _preload_content=_preload_content
+            )
+        except ApiException as api_exc:
+            error = f"Failed to exec command on pod: reason={api_exc.reason} body={api_exc.body}"
+        if error:
+            raise Exception(error)
+        return resp
+
+    def get_logs(self, pod_name, container=None):
+        """
+        Retrieves the logs for a specific pod and namespace.
+
+        :param pod_name: name of the pod to retrieve logs from.
+        :param container: Print the logs of this container, if not specified
+            the first container of the pod will be used.
+        """
+        if pod_name.lower().startswith("pod/"):
+            _, pod_name = pod_name.split("/")
+        elif pod_name.lower().startswith("deployment/"):
+            # TODO: get pods from deployment
+            return
+        elif pod_name.lower().startswith("job/"):
+            # TODO: get pods from Job
+            return
+        resp = self.v1_api.read_namespaced_pod_log(
+            name=pod_name, namespace=self.namespace, container=container
         )
+        return resp

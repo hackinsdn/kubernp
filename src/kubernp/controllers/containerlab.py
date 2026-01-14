@@ -104,6 +104,7 @@ class ContainerlabController:
 
         As part of the processing phase, we execute the following steps:
         - Change topology name to avoid invalid characters (it will become subdomain in Kubernetes)
+        - Unroll node config hierarchy Node > Kinds > Defaults
         - Handling absolute paths for startup-config and binds
         - Rename the topology file into clab_uuid to guarantee uniqueness
         """
@@ -213,6 +214,35 @@ class ContainerlabController:
 
         return final_configs
 
+    #def check_topology_secrets(self, topology, secrets):
+    #    """
+    #    Check if all node.imagePullSecrets exists. Return a dict mapping nodes
+    #    to their secrets (to be used later to mount volumes).
+    #    """
+    #    node_secrets = {}
+    #    for node_name, node in topology["topology"]["nodes"].items():
+    #        for s_name in node.get("imagePullSecrets", []):
+    #            if s_name not in secrets:
+    #                return False, f"Secret '{s_name}' not found! Being used as imagePullSecrets for node={node_name}"
+    #            node_secrets.setdefault(node_name, [])
+    #            node_secrets[node_name].append(s_name)
+    #    return True, node_secrets
+
+    def edit_topology_include_secrets(self, topology, image_pull_secret):
+        """
+        Edit Clabernetes Topology resource to include secrets to be mounted as
+        docker config.
+        """
+        if not image_pull_secret:
+            return
+        recursive_merge(
+            topology,
+            {"spec": {"imagePull": {
+                "dockerConfig": image_pull_secret,
+                "pullThroughOverride": "never",
+            }}},
+        )
+
     def is_containerlab(self, filename):
         """
         Apply some heuristics and validations to try to identify if the request
@@ -220,10 +250,23 @@ class ContainerlabController:
         """
         return filename.endswith(".clab.yaml") or filename.endswith(".clab.yml")
 
-    def prepare_lab(self, filename, **kwargs):
+    def prepare_lab(self, filename, image_pull_secret=None):
         """
         Parse the objects and prepare some configuration to run the
         ContainerLab experiment. Content must be YAML encoded string.
+
+        :param filename: path to file containing the Containerlab topology
+        :param image_pull_secret: name of an existing Kubernetes Secret to be
+            used on the topology nodes to pull private images (the secret will
+            be mounted into the container at ~/.docker/config). The Secret must
+            exists in the same Kubernetes namespace prior to running the lab.
+            Currently, Clabernetes does not support per node pull secret, only
+            one global secret name for all nodes in the topology. However, if
+            you can differentiate the pull URL for each image, you can define
+            multiple auth tokens all together. The secret *must* contain a key
+            "config.json" -- as this secret will be mounted to
+            /root/.docker/config.json and as such wil be utilized when doing
+            docker things (e.g., pull image).
         """
         # TODO: handle imagePullSecrets
         # TODO: run clabverter
@@ -237,6 +280,12 @@ class ContainerlabController:
         topo_dirname = topo_file.parent.name
         self.log.info(f"- Containerlab - parsing topology...")
         topology = self.parse_topology(topo_file, clab_name)
+
+        ## check imagePullSecrets
+        # Clabernetes does not allow per node secrets
+        #status, result_secrets = self.check_topology_secrets(topology, secrets)
+        #if not status:
+        #    raise Exception(result_secrets)
 
         self.log.info(f"- Containerlab - starting clabverter Pod...")
         tmp_exp = self.kubernp.create_experiment()
@@ -288,6 +337,8 @@ class ContainerlabController:
                 continue
             if yaml_doc.get("kind") == "Namespace":
                 continue
+            if yaml_doc.get("kind") == "Topology":
+                self.edit_topology_include_secrets(yaml_doc, image_pull_secret)
             resources.append(yaml_doc)
         if not resources or has_error:
             self.log.error(f"Convert ContainerLab failed: {result}")

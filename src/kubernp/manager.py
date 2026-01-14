@@ -15,7 +15,6 @@ import uuid
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
-import yaml
 from IPython import get_ipython
 
 from kubernp.controllers.kubernetes import K8sController
@@ -137,79 +136,15 @@ class KubeRNPManager:
             "log_file": self.log_file,
         }
 
-    def create_experiment(self, **kwargs):
-        return Experiment(self, **kwargs)
-
-    def create_experiment_from_file(self, filename, name=None, **kwargs):
-        """
-        Create a Kubernetes experiment/resources based on a file. JSON and YAML
-        formats are accepted. We apply some heuristics to try to identify if
-        experiment being created is based on HackInSDN/Mininet-Sec scenario or
-        ContainerLab scenario.
-
-        Parameters:
-        :param filename: path to the file that describes the experiment to be
-            created (manifest file), YAML or JSON. It can be a standard
-            Kubernetes manifest with multiple resources, a Mininet-Sec/HackInSDN
-            manifest, a ContainerLab topology.
-        :param name: Optional. String with the experiment name
-
-        Additional Parameters:
-        :param mnsec_image: name of the mininet-sec image (defaults to
-            hackinsdn/mininet-sec)
-        :param quiet: Boolean. When true do not print information on each step
-        """
-        if not kwargs.get("quiet", False):
-            print(f"Loading content from file {filename}")
-        try:
-            content = Path(filename).expanduser().read_text()
-        except Exception as exc:
-            print(exc)
-            return None
-        if self.mnsec.is_mininetsec(content):
-            if not kwargs.get("quiet", False):
-                print(f"Detected a Mininet-Sec manifest. Preparing the lab...")
-            objs = self.mnsec.prepare_lab(content, **kwargs)
-            if not objs:
-                print(f"Failed to convert Mininet-sec Lab")
-                return
-        elif self.c9s.is_containerlab(filename):
-            if not kwargs.get("quiet", False):
-                print(f"Detected a Containerlab topology. Converting to clab...")
-            objs = self.c9s.prepare_lab(filename, **kwargs)
-            if not objs:
-                print(f"Failed to convert Containerlab Lab")
-                return
-        else:
-            if not kwargs.get("quiet", False):
-                print(f"Generic Kubernetes manifest. Loading resources...")
-            try:
-                objs = json.loads(content)
-                objs = [objs] if isinstance(objs, dict) else objs
-            except:
-                try:
-                    objs = list(yaml.safe_load_all(content))
-                except:
-                    print("Failed to load content from file: must be YAML or JSON")
-                    return None
-
-        if not kwargs.get("quiet", False):
-            print(f"Creating experiment...")
-        exp = self.create_experiment(name=name)
-
-        if not kwargs.get("quiet", False):
-            print(f"Creating resources...")
-        exp.create_resources(objs, as_is=True)
-
-        if not kwargs.get("quiet", False):
-            print(f"All done!")
-        return exp
+    def create_experiment(self, name=None, **kwargs):
+        return Experiment(self, name=name, **kwargs)
 
     def list_experiments(self):
         try:
             results = self.k8s.get_resource("v1", "ConfigMap", None, label_selector="kubernp/kind=Experiment").items
-        except:
-            results = []
+        except Exception as exc:
+            self.log.error(f"Failed to list experiments: {exc}")
+            return
         experiments = {"NAME": [], "DESCRIPTION": [], "CREATED_AT": [], "#RESOURCES": []}
         for exp in results:
             experiments["NAME"].append(exp.metadata.name)
@@ -236,3 +171,73 @@ class KubeRNPManager:
             self.k8s.delete_resource("v1", "ConfigMap", exp.name)
         except:
             pass
+
+    def healthcheck_nodes(self, image="busybox:1.37", command=["sleep", "infinity"], test_cmd="wget http://ifconfig.io/ip -O -", expect_func=None, timeout=30, nodes=None):
+        """
+        Run a health check into Kubernetes nodes and return their status.
+
+        Arguments:
+        :param image: docker image to be used in the healthcheck pod
+        :param command: command to be used in the healthcheck container
+        :param test_cmd: test command to be executed on the created pod
+        :param expect_func: expect function to be used to verify if test_cmd was
+            success or not, the function should return the expected value
+            returned by test_cmd. The function receives one argument:  the node
+            name where test_cmd was executed. The value from expect_func is
+            compared with result from test_cmd to determine node is healthy.
+        :timeout: timeout to wait for the Pod to be running and for test_cmd to
+            execute.
+        """
+        health_nodes = []
+        reason = {}
+        self.k8s.update_nodes()
+        if nodes is None:
+            nodes = [
+                node for node, info in self.k8s.node_info.items()
+                if info["status"] == "Ready" and "worker" in info["roles"]
+            ]
+        if not nodes:
+            return health_nodes, reason
+
+        exp = self.create_experiment()
+        pods = {}
+        for node in nodes:
+            try:
+                pods[node] = exp.create_pod(
+                    name=f"pod-test-{node}-{exp.uid[:8]}",
+                    image=image,
+                    command=command,
+                    node_affinity=node
+                )
+            except Exception as exc:
+                reason[node] = f"Failed to create test pod: {exc}"
+
+        running_pods = []
+        for node in pods:
+            is_running, msg = pods[node].wait_running(timeout=timeout)
+            if is_running:
+                running_pods.append(node)
+            else:
+                reason[node] = msg
+
+        results = {}
+        extra_info = {}
+        for n in running_pods:
+            extra_info[n] = pods[n].get_k8s()
+            try:
+                results[n] = pods[n].exec(f"timeout {timeout} {test_cmd}").strip()
+            except Exception as exc:
+                reason[n] = f"Failed to exec test pod commands on node={n}: {exc}"
+
+        if expect_func is None:
+            expect_func = lambda n: self.k8s.node_info[n]["internal_ip"]
+        for node, result in results.items():
+            expected = expect_func(node)
+            if result == expected:
+                health_nodes.append(node)
+            else:
+                reason[node] = f"Mismatch on test output: {expected=} {result=}. Extra info: {extra_info[node]}"
+
+        self.delete_experiment(exp)
+
+        return health_nodes, reason

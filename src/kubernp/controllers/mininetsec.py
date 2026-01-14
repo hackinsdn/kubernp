@@ -3,6 +3,7 @@
 import uuid
 import os
 import base64
+import random
 
 import yaml
 
@@ -114,7 +115,7 @@ class MininetSecController:
             hackinsdn/mininet-sec)
         """
         self.log.info(" - Mininet-Sec: replate token strings...")
-        mnsec_image = kwargs.get("mnsec_image", "hackinsdn/mininet-sec")
+        mnsec_image = kwargs.get("mnsec_image") or "hackinsdn/mininet-sec"
         pod_hash = uuid.uuid4().hex[:10]
         content = content.replace("${pod_hash}", pod_hash)
 
@@ -122,6 +123,7 @@ class MininetSecController:
         allowed_nodes = [name for name, info in self.k8s.node_info.items() if "worker" in info["roles"]]
         content = content.replace("${allowed_nodes}", str(allowed_nodes))
         content = content.replace("${allowed_nodes_str}", ",".join(allowed_nodes))
+        content = content.replace("${choose_one_node}", str(random.choice(allowed_nodes)))
 
         self.log.info(" - Mininet-Sec: loading resources and adding kubeconfig secret...")
         docs = []

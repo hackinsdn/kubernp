@@ -11,9 +11,11 @@ import tempfile
 import time
 import base64
 import sys
+import getpass
 from pathlib import Path
 from typing import Optional
 
+import yaml
 from kubernetes.client.exceptions import ApiException
 
 from kubernp.utils import recursive_merge, validate_k8s_name, format_duration
@@ -54,17 +56,22 @@ class Resource:
         if self.kind == "Pod":
             return [self.k8s_dict]
         if self.kind == "Deployment":
+            ownership_selector = set([f"{self.kind}/{self.name}"])
+            for rs_name in self.experiment.k8s.list_replicaset(
+                ownership_selector=ownership_selector, as_dict=True
+            ):
+                ownership_selector.add(f"ReplicaSet/{rs_name}")
             try:
-                pods = self.experiment.k8s.get_resource(
-                    "v1", "Pod", None, label_selector=f"app={self.name}"
-                ).items
-            except:
-                self.log.error(f"Failed to obtain container for {self.kind}/{name}")
+                pods = self.experiment.k8s.list_pod(
+                    ownership_selector=ownership_selector, as_dict=True
+                )
+            except Exception as exc:
+                self.log.error(f"Failed to obtain container for {self.kind}/{self.name}: {exc}")
                 return None
-            return [pod.to_dict() for pod in pods]
+            return pods
         return None
 
-    def exec(self, cmd, pod_name=None, output=True):
+    def exec(self, cmd, pod_name=None, output=False):
         pod_name = self.get_pod_name(pod_name)
         if not pod_name:
             self.log.error(f"Resource {self.kind}/{self.name} does not support exec")
@@ -73,7 +80,6 @@ class Resource:
         cmd = " ".join(cmd) if isinstance(cmd, list) else cmd
         if cmd[-1] == "&":
             cmd = cmd[:-1] + ">/dev/null 2>&1 & echo $!"
-        # TODO: when output=True, follow example on real-time-k8s-stream.txt
         stream = self.experiment.k8s.pod_exec(
             pod_name=pod_name,
             command=["/bin/sh", "-c", cmd],
@@ -103,7 +109,7 @@ class Resource:
             print(f"No Pods found for this resource ({self.kind}/{self.name})")
             return
         pods_table = {"NAME": [], "STATUS": [], "AGE": []}
-        for pod in pods:
+        for pod in pods.values():
             pods_table["NAME"].append(pod["metadata"]["name"])
             pods_table["AGE"].append(format_duration(pod["metadata"]["creationTimestamp"]))
             pods_table["STATUS"].append(pod["status"]["phase"])
@@ -119,8 +125,7 @@ class Resource:
             if not pod_name:
                 self.log.error(f"Multiple Pods found, please provide the 'pod_name'. Use the list_pods() function.")
                 return None
-            names = set([pod["metadata"]["name"] for pod in pods])
-            if pod_name not in names:
+            if pod_name not in pods:
                 self.log.error(f"The provided 'pod_name' was not found.")
                 return None
         else:
@@ -133,12 +138,13 @@ class Resource:
     def get_endpoints(self):
         pods = self.get_k8s_pods()
         if not pods:
-            self.log.error(f"Resource {kind}/{name} does not support endpoints")
+            self.log.error(f"Resource {self.kind}/{self.name} does not support endpoints")
             return
+        labels = ",".join(f"{k}={v}" for k, v in self.k8s_dict["metadata"].get("labels", {}).items())
         try:
-            services = self.experiment.k8s.get_resource(
-                "v1", "Service", None, label_selector=f"app={self.name}"
-            ).items
+            services = self.experiment.list_service(
+                label_selector=labels, as_list=True
+            )
         except:
             services = []
         endpoints = {}
@@ -146,12 +152,14 @@ class Resource:
             for port in srv.spec.ports:
                 port_name = port.name or f"{port.port}-{port.protocol.lower()}"
                 endpoints[port_name] = []
-                for pod in pods:
+                for pod in pods.values():
                     node_ip = self.experiment.k8s.get_node_ip(pod["spec"]["nodeName"])
                     if node_ip and ":" in node_ip:
                         node_ip = f"[{node_ip}]"
                     if port.nodePort:
                         endpoints[port_name].append(f"{node_ip}:{port.nodePort}")
+                if not endpoints[port_name]:
+                    endpoints.pop(port_name)
         return endpoints
 
     def upload_files(self, local_path, pod_name=None, chunk_size=1024*1024, quiet=False):
@@ -310,6 +318,8 @@ class Experiment:
         """Create an Experiment."""
         self.kubernp = kubernp
         self.k8s = self.kubernp.k8s
+        self.mnsec = self.kubernp.mnsec
+        self.c9s = self.kubernp.c9s
         self.name = validate_k8s_name(name) if name else f"exp-{uuid.uuid4()}"
         self.description = description
         self.default_image = default_image
@@ -465,19 +475,7 @@ class Experiment:
             deployment["spec"]["replicas"] = kwargs["replicas"]
 
         if "node_affinity" in kwargs:
-            deployment["spec"]["template"]["spec"]["affinity"] = {
-                "nodeAffinity": {
-                    "requiredDuringSchedulingIgnoredDuringExecution": {
-                        "nodeSelectorTerms": [{
-                            "matchExpressions": [{
-                                "key": "kubernetes.io/hostname",
-                                "operator": "In",
-                                "values": kwargs["node_affinity"].split(","),
-                            }],
-                        }],
-                    },
-                },
-            }
+            self._setup_node_affinity(deployment, kwargs["node_affinity"])
 
         if "pvc" in kwargs:
             pvc_name = kwargs["pvc"].pop("name")
@@ -657,19 +655,7 @@ class Experiment:
             pod["spec"]["containers"][0]["args"] = kwargs["args"]
 
         if "node_affinity" in kwargs:
-            pod["spec"]["affinity"] = {
-                "nodeAffinity": {
-                    "requiredDuringSchedulingIgnoredDuringExecution": {
-                        "nodeSelectorTerms": [{
-                            "matchExpressions": [{
-                                "key": "kubernetes.io/hostname",
-                                "operator": "In",
-                                "values": kwargs["node_affinity"].split(","),
-                            }],
-                        }],
-                    },
-                },
-            }
+            self._setup_node_affinity(pod, kwargs["node_affinity"])
 
         if "pvc" in kwargs:
             pvc_name = kwargs["pvc"].pop("name")
@@ -1035,17 +1021,28 @@ class Experiment:
             secret["apiVersion"], secret["kind"], name, k8s_result
         )
 
-    def create_secret_docker_registry(self, name, registry_url, username, password, email=None):
+    def create_secret_docker_registry(
+        self, name, registry_url, username, password, email=None,
+        secret_key=".dockerconfigjson", extra_registries={},
+    ):
         """
         Creates a Kubernetes Docker Registry Secret from credentials.
     
         :param name: Name of the secret
         :param registry_url: URL of the Docker registry
         :param username: Docker username
-        :param password: Docker password
+        :param password: Docker password. If password=None, it will be asked
+            interactively using getpass module (a secure way to get sensitive
+            information).
         :param email: Optional Docker email
-
+        :param secret_key: key name to be used in the docker registry secret.
+            Defaults to .dockerconfigjson
+        :param extra_registries: Dict with extra docker registries to be added
+            into this secret. Each dict key is the actual registry_url, and
+            value is another dict with username, password and optionally email.
         """
+        if password is None:
+            password = getpass.getpass()
         secret = {
             "apiVersion": "v1",
             "kind": "Secret",
@@ -1077,11 +1074,21 @@ class Experiment:
                 }
             }
         }
-        
+        for url, attrs in extra_registries.items():
+            config_data["auths"][url] = {
+                "username": attrs["username"],
+                "password": attrs["password"],
+                "email": attrs.get("email"),
+                "auth": base64.b64encode(f"{attrs['username']}:{attrs['password']}".encode('utf-8')).decode('utf-8')
+            }
+
         json_config = json.dumps(config_data).encode('utf-8')
         encoded_config = base64.b64encode(json_config).decode('utf-8')
 
-        secret["data"] = {".dockerconfigjson": encoded_config}
+        secret["data"] = {secret_key: encoded_config}
+
+        if secret_key != ".dockerconfigjson":
+            secret["type"] = "Opaque"
 
         k8s_result = self.k8s.create_from_dict(secret)
 
@@ -1225,6 +1232,39 @@ class Experiment:
 
         return self._add_resource(k8s_req["apiVersion"], k8s_req["kind"], name, k8s_result)
 
+    def _setup_node_affinity(self, resource, node_affinity):
+        """Change the resource dict spec to include node affinity."""
+        if isinstance(node_affinity, str):
+            node_affinity = node_affinity.split(",")
+        if resource["kind"] == "Deployment":
+            resource["spec"]["template"]["spec"]["affinity"] = {
+                "nodeAffinity": {
+                    "requiredDuringSchedulingIgnoredDuringExecution": {
+                        "nodeSelectorTerms": [{
+                            "matchExpressions": [{
+                                "key": "kubernetes.io/hostname",
+                                "operator": "In",
+                                "values": node_affinity,
+                            }],
+                        }],
+                    },
+                },
+            }
+        elif resource["kind"] == "Pod":
+            resource["spec"]["affinity"] = {
+                "nodeAffinity": {
+                    "requiredDuringSchedulingIgnoredDuringExecution": {
+                        "nodeSelectorTerms": [{
+                            "matchExpressions": [{
+                                "key": "kubernetes.io/hostname",
+                                "operator": "In",
+                                "values": node_affinity,
+                            }],
+                        }],
+                    },
+                },
+            }
+
     def _add_resource(self, api_version, kind, name, k8s_result):
         """
         Internal helper function to create a Resource object and update the
@@ -1254,6 +1294,22 @@ class Experiment:
                 continue
 
             if as_is:
+                # Even tought the resources are supposed to be created 'as_is'
+                # we actually slightly modify them to include ownsership and
+                # labels
+                recursive_merge(resource, {
+                    "metadata": {
+                        "labels": {"kubernp/Experiment": self.name},
+                        "ownerReferences": [
+                            {
+                                "name": self.name,
+                                "uid": self.uid,
+                                "apiVersion": "v1",
+                                "kind": "ConfigMap",
+                            },
+                        ],
+                    },
+                })
                 k8s_result = self.k8s.create_from_dict(resource)
                 results.append(self._add_resource(
                     resource["apiVersion"],
@@ -1278,6 +1334,71 @@ class Experiment:
 
         return results
 
+    def create_from_file(self, filename, mnsec_image=None, image_pull_secret=None, node_affinity=None):
+        """
+        Create a Kubernetes resources based on a file. JSON and YAML formats
+        are accepted. We apply some heuristics to try to identify if experiment
+        being created is based on HackInSDN/Mininet-Sec scenario or
+        ContainerLab scenario.
+
+        Parameters:
+        :param filename: path to the file that describes the experiment to be
+            created (manifest file), YAML or JSON. It can be a standard
+            Kubernetes manifest with multiple resources, a Mininet-Sec/HackInSDN
+            manifest, a ContainerLab topology.
+        :param mnsec_image: name of the mininet-sec image (defaults to
+            hackinsdn/mininet-sec)
+        :param image_pull_secret: Optional. Used for ContainerLab to define a
+            Secret to be used to pull private images.
+        :param node_affinity: Optional. List of node names to be used as node
+            affinity for Pods and Deployments.
+        """
+        self.log.info(f"Loading content from file {filename}")
+        try:
+            content = Path(filename).expanduser().read_text()
+        except Exception as exc:
+            self.log.error(f"Failed to load file: {exc}")
+            return None
+        if self.mnsec.is_mininetsec(content):
+            self.log.info(f"Detected a Mininet-Sec manifest. Preparing the lab...")
+            secrets = set(
+                [name for _, kind, name in self.resources if kind == "Secret"]
+            )
+            objs = self.mnsec.prepare_lab(content, mnsec_image=mnsec_image, secrets=secrets)
+            if not objs:
+                self.log.error(f"Failed to convert Mininet-sec Lab")
+                return
+        elif self.c9s.is_containerlab(filename):
+            self.log.info(f"Detected a Containerlab topology. Converting to clab...")
+            if isinstance(image_pull_secret, dict):
+                self.log.info(f"Creating required secret for docker image pull...")
+                sec_name = image_pull_secret.pop("name", f"secret-img-pull-{uuid.uuid4().hex[:10]}")
+                self.create_secret_docker_registry(name=sec_name, secret_key="config.json", **image_pull_secret)
+                image_pull_secret = sec_name
+            objs = self.c9s.prepare_lab(filename, image_pull_secret=image_pull_secret)
+            if not objs:
+                self.log.error(f"Failed to convert Containerlab Lab")
+                return
+        else:
+            self.log.info(f"Generic Kubernetes manifest. Loading resources...")
+            try:
+                objs = json.loads(content)
+                objs = [objs] if isinstance(objs, dict) else objs
+            except:
+                try:
+                    objs = list(yaml.safe_load_all(content))
+                except:
+                    self.log.error("Failed to load content from file: must be YAML or JSON")
+                    return None
+
+        if node_affinity:
+            for obj in objs:
+                self._setup_node_affinity(obj, node_affinity)
+
+        self.log.info(f"Creating resources...")
+
+        return self.create_resources(objs, as_is=True)
+
     def list_resources(self):
         resource_dict = {"NAME": [], "UID": [], "AGE": [], "STATUS": []}
         for api_ver, kind, name in self.resources:
@@ -1299,7 +1420,15 @@ class Experiment:
 
     def list_pod(self, name=None, **kwargs):
         """List Experiment Pods."""
-        kwargs["ownership_selector"] = self.resource_names
+        # for pods we extend the list of resources to include deployments
+        ownership_selector = set(self.resource_names)
+        for dep_name in self.list_deployment(as_dict=True):
+            ownership_selector.add(f"Deployment/{dep_name}")
+        for rs_name in self.k8s.list_replicaset(
+            ownership_selector=ownership_selector, as_dict=True
+        ):
+            ownership_selector.add(f"ReplicaSet/{rs_name}")
+        kwargs["ownership_selector"] = ownership_selector
         return self.k8s.list_pod(name=name, **kwargs)
 
     def list_deployment(self, name=None, **kwargs):
@@ -1356,13 +1485,27 @@ class Experiment:
         for name_kind in list(self.resource_names.keys()):
             self.delete_resource(name_kind, force=force)
 
+    def get_endpoints(self):
+        """List endpoints for all resources."""
+        endpoints = {}
+        for resource in self.resources.values():
+            resource = resource["resource"]
+            if resource.kind in ["Deployment", "Pod"]:
+                recursive_merge(endpoints, resource.get_endpoints(), merge_list=True)
+        return endpoints
+
     def list_events(self, all_resources=False):
         my_resources = set(self.resource_names.keys())
+        for pod_name in self.list_pod(as_dict=True):
+            my_resources.add(f"Pod/{pod_name}")
         if all_resources:
             resources = self.k8s.list_all_k8s_resources(label_selector=f"kubernp/Experiment={self.name}", as_dict=True)
             for kind, name in zip(resources["KIND"], resources["RESOURCE NAME"]):
                 my_resources.add(f"{kind}/{name}")
         self.k8s.list_events(resources=my_resources)
+
+    def list_events_all(self):
+        return self.list_events(all_resources=True)
 
     def finish(self):
         """Finish this experiment and delete resources."""
