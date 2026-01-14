@@ -1,0 +1,118 @@
+# Based on:
+# - https://github.com/paciorek/future-kubernetes-docker
+# - https://github.com/paciorek/future-helm-chart
+# - https://www.r-bloggers.com/2021/04/using-kubernetes-and-the-future-package-to-easily-parallelize-r-in-the-cloud/
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: future-scheduler
+  labels:
+    app: future
+    component: scheduler
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: future
+      component: scheduler
+  template:
+    metadata:
+      labels:
+        app: future
+        component: scheduler
+    spec:
+      # Comment the lines below if you dont want to have node affinity
+      # the NODE_AFFINITY variable marker below will be replaced by kubernp lib
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: kubernetes.io/hostname
+                operator: In
+                values: XXXNODE_AFFINITYXXX
+      containers:
+        - name: future-scheduler
+          image: rocker/rstudio:4.5.1
+          imagePullPolicy: Always
+          args:
+            - sh
+            - -c
+            - "Rscript -e \"install.packages(c('future', 'future.apply', 'doFuture'))\" && echo R_PARALLEL_PORT=11562 >> /usr/local/lib/R/etc/Renviron && PASSWORD=future /init"
+          ports:
+            - containerPort: 11562
+            - containerPort: 8787
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: future-worker
+  labels:
+    app: future
+    component: worker
+spec:
+  replicas: 4
+  selector:
+    matchLabels:
+      app: future
+      component: worker
+  template:
+    metadata:
+      labels:
+        app: future
+        component: worker
+    spec:
+      # Comment the lines below if you dont want to have node affinity
+      # the NODE_AFFINITY variable marker below will be replaced by kubernp lib
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: kubernetes.io/hostname
+                operator: In
+                values: XXXNODE_AFFINITYXXX
+      containers:
+        - name: future-worker
+          image: rocker/rstudio:4.5.1
+          imagePullPolicy: Always
+          args:
+            - sh
+            - -c
+            - "Rscript -e \"install.packages(c('future', 'future.apply', 'doFuture')); library(future); library(future.apply);\" && Rscript --default-packages=datasets,utils,grDevices,graphics,stats,methods -e 'workRSOCK <- tryCatch(parallel:::.workRSOCK, error=function(e) parallel:::.slaveRSOCK); workRSOCK()' MASTER=future-scheduler-master PORT=11562 OUT=/tmp/rworker.log SETUPTIMEOUT=2592000 TIMEOUT=2592000 XDR=TRUE"
+          ports:
+            - containerPort: 8789
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: future-scheduler-master
+  labels:
+    app: future
+    component: scheduler
+spec:
+  ports:
+    - name: future-master
+      port: 11562
+      targetPort: 11562
+  selector:
+    app: future
+    component: scheduler
+  type: ClusterIP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: future-scheduler-rstudio
+  labels:
+    app: future
+    component: scheduler
+spec:
+  ports:
+    - name: future-rstudio
+      port: 8787
+      targetPort: 8787
+  selector:
+    app: future
+    component: scheduler
+  type: NodePort

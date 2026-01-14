@@ -1,0 +1,43 @@
+name: my_lab
+topology:
+  defaults:
+    kind: linux
+    image: ghcr.io/srl-labs/alpine
+  kinds:
+    srl:
+      kind: nokia_srlinux
+      type: ixrd3
+      image: ghcr.io/nokia/srlinux:latest
+      startup-config: configs/srl.cfg
+  groups:
+    linux_hosts:
+      binds:
+        - configs/client.sh:/config.sh
+      exec:
+        - chmod +x /config.sh
+        - ash -c '/config.sh ${NODE_ID}'
+  nodes:
+    node1:
+      kind: srl
+    node2:
+      kind: nokia_srlinux
+      image: ghcr.io/nokia/srlinux:24.10.1
+      startup-config: configs/srl.cfg
+    host1:
+      group: linux_hosts
+      env:
+        NODE_ID: "101"
+    host2:
+      group: linux_hosts
+      env:
+        NODE_ID: "200"
+
+  links:
+    # links between client1 and srl1
+    - endpoints: [host1:eth1, node1:e1-1]
+
+    # inter-switch link
+    - endpoints: [node1:e1-10, node2:e1-10]
+
+    # links between client2 and srl2
+    - endpoints: [node2:e1-1, host2:eth1]

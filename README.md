@@ -216,3 +216,173 @@ kubernp = KubeRNP(kubeconfig="~/.kube/config-other-cluster")
 kubernp.delete_experiment("grafana-mqtt-exp")
 ```
 
+Example 3: Leverage the Kubernetes cluster to run distributed processing in R
+
+The primary goal of this lab is to demonstrate the integration of the `future` package
+in R with a Kubernetes cluster to facilitate scalable parallel computing. By
+transitioning from local processing to a distributed environment, the lab aims to show
+how researchers can dynamically allocate resources in the Kubernetes cluster to meet the
+computational demands of a task. Ultimately, the objective is to establish a flexible,
+high-performance workflow that leverages Kubernetes infrastructure to overcome the hardware
+limitations of a single machine.
+
+The following image outlines the scenario and setup.
+
+![r-future-cluster.png](./img/r-future-cluster.png)
+
+In a Kubernetes environment, the actual work is handled by pods, which function like individual
+Linux containers. These pods live on nodes, which are virtual machines or physical servers provided
+by the cloud operator. A major benefit of this setup is resiliency: if a pod fails, Kubernetes is
+designed to automatically restart it, ensuring your computations continue without manual intervention.
+Futhermore, the most significant advantage is the massive performance gain achieved by moving from a
+single machine to a distributed cluster: by offloading R processing tasks to a Kubernetes cluster,
+you move beyond the physical limits of your local CPU and RAM.
+
+To make that happens, the R `future` package can treat each pod as an individual worker. Thus, tasks
+that would normally run sequentially on your laptop are executed simultaneously across dozens or
+even hundreds of cloud instances.
+
+The basic steps are:
+
+1. Setup an experiment on Kubernetes leveraging the KubeRNP library
+2. Start the "pods of interest" using an example provided in this tutorial
+3. Connect to the RStudio Server running in the Kubernetes cluster from your Internet browser
+4. Prepare and run the experiment
+5. Finish the experiment and release the resources
+
+By "pods of interest" we mean: A) one (scheduler) pod for a main process that runs RStudio Server
+and communicates with the workers; B) multiple (worker) pods, each with one R worker process to act
+as the workers. All pods will be running the docker image `rocker/rstudio:4.5.1` which is commonly
+used by the community.
+
+Let's get started:
+
+```
+$ python3
+
+from kubernp import KubeRNP
+kubernp = KubeRNP(kubeconfig="~/.kube/config-other-cluster")
+
+exp = kubernp.create_experiment("r-future-exp")
+```
+
+We will start by checking the Kubernetes cluster to make sure the nodes are healthy and can run our jobs (this can take a few seconds because it will run a actual job on each node to guarantee it is fully operational):
+
+```
+healthy, unhealthy = kubernp.healthcheck_nodes()
+```
+
+Now that we have the list of healthy nodes, we can use the Kubernetes Node Affinity feature to run our experiment on that nodes:
+
+```
+exp.create_from_file("misc/r-future-cluster.yaml", node_affinity=healthy)
+exp.list_resources()
+```
+
+You should see a list of resources that were created based on the manifest provided as example (`misc/r-future-cluster.yaml`):
+
+```
+>>> exp.list_resources()
+NAME                              UID                                   AGE    STATUS
+--------------------------------  ------------------------------------  -----  --------
+Deployment/future-scheduler       e4c48b09-afef-4413-a8f9-27e33bcf0c68  19s    1/1
+Deployment/future-worker          6f2c0369-6ffe-49ac-820e-83d1232cd8d1  18s    4/4
+Service/future-scheduler-master   b580d01c-e0bf-45ca-b876-4dcd7351163f  17s    --
+Service/future-scheduler-rstudio  47371808-34d9-4f7f-8127-d0c921b2dae4  17s    --
+```
+
+Run the following command to get the URL that you will open your Internet browser to actually run the R experiment:
+
+```
+>>> exp.get_endpoints()
+{'future-rstudio': ['200.159.252.130:32744']}
+```
+
+**Note**: you can also combine the Ingress feature as we demonstrated on previous example to have a nice URL with https on standard ports, rather than http on 32690 (which can be subject to firewall restrictions on many organizations).
+
+Open the address returned (i.e, `http://200.159.252.130:32744`) on your Internet browser. If asked for username and password you can use: username - **rstudio** and password - **future**. You should see an image like this:
+
+![r-future-screen01.png](./img/r-future-screen01.png)
+
+And after login, you should see this:
+
+![r-future-screen02.png](./img/r-future-screen02.png)
+
+Now, on the RStudio console, let's start by importing the libraries we will use:
+
+```
+library(future)
+library(future.apply)
+```
+
+Next, we will create a plan for the experiment, leveraging the remote workers to compose our cluster:
+
+```
+plan(cluster, manual = TRUE, quiet = FALSE, workers=4)
+```
+
+The parameter `manual = TRUE` above plays an important role to prevent the future package from
+attempting to launch new R processes on the workers. This is necessary because Kubernetes has
+already initialized these processes, which are currently idling and waiting to establish a
+connection with the primary RStudio Server instance. With the parameter `workers=4` we setup
+the plan to wait for 4 workers to connect. Finally, `quiet=FALSE` helps us seeing what is being
+executed.
+
+You should see an output like this:
+
+![r-future-screen03.png](./img/r-future-screen03.png)
+
+After a few seconds, you can run the following command to check if all workers are running:
+
+```
+nbrOfWorkers()
+future_sapply(seq_len(nbrOfWorkers()), function(i) Sys.info()[["nodename"]])
+```
+
+You should see the number of workers equals 4 and the name of each pod:
+
+![r-future-screen04.png](./img/r-future-screen04.png)
+
+Notice that the name of the workers match the name of the pods we created, you can confirm that by running the following command on the Python console we started earlier:
+
+```
+>>> exp.list_pod()
+KIND/NAME                             STATUS    AGE    NODE    IP
+------------------------------------  --------  -----  ------  -------------
+Pod/future-scheduler-dcc577d46-lr5cg  Running   15m    ids-rj  10.50.24.2
+Pod/future-worker-64d8d4ffb8-kwjxz    Running   15m    ids-rn  10.50.124.182
+Pod/future-worker-64d8d4ffb8-lwxjq    Running   15m    whx-rn  10.50.22.203
+Pod/future-worker-64d8d4ffb8-spndk    Running   15m    ids-rj  10.50.24.42
+Pod/future-worker-64d8d4ffb8-xqjpt    Running   15m    ids-pb  10.50.63.154
+```
+
+Next we will actually run the R experiment leveraging the distributed processing. For our demonstration, we will run a very simple calculation consisting of calculating the mean of 10 milion random numbers eithy times in parallel (we will also measure the time taken for comparison purposes). On your browser running RStudio:
+
+```
+time_taken <- system.time(output <- future_sapply(seq_len(80), function(i) mean(rnorm(1e7)), future.seed = TRUE))
+print(time_taken)
+```
+
+You should see this:
+
+![r-future-screen05.png](./img/r-future-screen05.png)
+
+Finally, just for the sake of comparison, we can run the same experiment in a sequencial strategy to check how long it will take:
+
+```
+plan(sequential)
+time_taken2 <- system.time(output <- future_sapply(seq_len(80), function(i) mean(rnorm(1e7)), future.seed = TRUE))
+print(time_taken2)
+```
+
+Expected output:
+
+![r-future-screen06.png](./img/r-future-screen06.png)
+
+You should see that the time is much higher, which makes sense, since we compared a distributed execution with 4 workers versus a sequential execution with just one workers. One could even explore more this experiment by combining `multisession` and `cluster` parallel strategies which will explore more cores available on each worker. 
+
+Finally, we can finish the experiment and release the resources on the Python console:
+
+```
+exp.finish()
+```

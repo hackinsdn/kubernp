@@ -1,0 +1,39 @@
+name: config_hierarchy_demo
+
+topology:
+  defaults:
+    kind: linux
+    env:
+      CONFIG_REV: "1.0"
+      DEFAULT_ENV_A: "AAA"
+      MONITORING: "true"
+
+  kinds:
+    linux:
+      binds:
+        - scripts:/opt/scripts
+      image: busybox:latest
+      env:
+        KIND_ENV_B: "BBB"
+
+  nodes:
+    spine1:
+      kind: linux
+      image: alpine:latest
+      binds:
+        - configs/spine1.cfg:/etc/node.cfg
+      env:
+        NODE_ENV_C: "CCC"
+        MONITORING: "false"
+
+    leaf1:
+      binds:
+        - configs/leaf1.cfg:/etc/node.cfg
+
+    leaf2:
+      binds:
+        - configs/leaf2.cfg:/etc/node.cfg
+
+  links:
+    - endpoints: ["spine1:eth1", "leaf1:eth1"]
+    - endpoints: ["spine1:eth2", "leaf2:eth1"]
