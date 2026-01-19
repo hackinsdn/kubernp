@@ -21,7 +21,7 @@ topology:
       kind: srl
     node2:
       kind: nokia_srlinux
-      image: ghcr.io/nokia/srlinux:24.10.1
+      image: ghcr.io/nokia/srlinux
       startup-config: configs/srl.cfg
     host1:
       group: linux_hosts

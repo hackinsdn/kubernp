@@ -560,4 +560,93 @@ Please note that, currently, Clabernetes only supports one secret to be used for
 
 ### Example 07: Running ContainerLab into Kubernetes as single pod scenario
 
-TODO
+If you dont have Clabernetes controller installed on your Kubernetes cluster, you can still use ContainerLab on the cluster, however you wont benefit from the distributed environment to spread the topology among different nodes and pods. If that is fine for you, this example will guide you through the process.
+
+First step, as usual, is to setup an experiment:
+```
+$ python3
+
+from kubernp import KubeRNP
+kubernp = KubeRNP(kubeconfig="~/.kube/config-other-cluster")
+
+exp = kubernp.create_experiment()
+```
+
+Next, you can create a Deployment to run your Lab. We will leverage the clabernetes docker image to run our Deployment just to simplicity. We will also publish a port that can be used to visualize the topology:
+```
+clab = exp.create_deployment(name="test-clab", image="ghcr.io/srl-labs/clabernetes/clabernetes-launcher:latest", privileged=True, command=["sh", "-c", "/clabernetes/manager launch; sleep infinity"], volumes=["/lib/modules:/lib/modules"], publish=[50080])
+```
+
+After a few seconds, you should see the Deployment running:
+```
+>>> exp.list_resources()
+NAME                            UID                                   AGE    STATUS
+------------------------------  ------------------------------------  -----  --------
+Deployment/test-clab            a3a45608-6e7e-4cc9-a6c4-e24d4089490f  5s     1/1
+Service/srv-test-clab-nodeport  3856deed-22de-4b23-a300-bd4b35c2f27a  5s     --
+>>> exp.list_pod()
+KIND/NAME                       STATUS    AGE    NODE         IP
+------------------------------  --------  -----  -----------  ------------
+Pod/test-clab-686d9667ff-99hch  Running   18s    k8s-testing  10.97.108.65
+```
+
+We need to upload the lab files to Kubernetes:
+```
+clab.upload_files("misc/containerlab/lab2")
+```
+
+Here is an example of the expected output so far:
+
+![example07-screen01.png](./img/example07-screen01.png)
+
+Now we will open a remote shell to the Pod and start our ContainerLab lab. For that, open a new terminal window/tab and run the following command (**Notice:** please use the Pod name as displayed on the `list_pod` output before):
+
+```
+python3 -m kubernp shell Pod/test-clab-686d9667ff-99hch
+```
+
+You should now get connected to the Pod shell, from there you can navigate to the lab folder and start the lab:
+
+```
+cd /uploads/lab2
+clab deploy
+```
+
+If all goes well, you should see the following output:
+
+![example07-screen02.png](./img/example07-screen02.png)
+
+Then you can start the topology visualizer:
+
+```
+clab graph
+```
+
+![example07-screen03.png](./img/example07-screen03.png)
+
+
+Go back to your Python console and get the correspondent endpoint to open the URL on the browser:
+```
+>>> exp.list_endpoints()
+NAME       ENDPOINT
+---------  ---------------------
+50080-tcp  190.103.184.201:30997
+```
+
+And open your Internet browser with that URL:
+
+![example07-screen04.png](./img/example07-screen04.png)
+
+After playing with your lab, you can finish it by first destroying the clab on the Pod shell (if your shell is still running the topology visualizer, you can just press CTRL+C):
+
+```
+clab destroy
+```
+
+![example07-screen05.png](./img/example07-screen05.png)
+
+Back to the Python console, you can finish the experiment to release all resources from the Kubernetes cluster:
+
+```
+>>> exp.finish()
+```
