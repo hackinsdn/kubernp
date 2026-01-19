@@ -28,7 +28,7 @@ def cli(ctx, **kwargs):
 @cli.command()
 @click.argument('pod')
 @click.option("-c", '--container', default=None, help='Container name. If omitted, the first container in the pod will be chosen.')
-@click.option("-s", '--shell', default=None, help='. If omitted, the first container in the pod will be chosen.')
+@click.option("-s", '--shell', default=None, help='Shell to be used. Defaults to /bin/bash')
 @click.pass_obj
 def shell(kubernp, pod, container, shell):
     """Start a shell in a container.."""
@@ -42,8 +42,12 @@ def shell(kubernp, pod, container, shell):
         # TODO: get pods from Job
         print("Not implemented")
         return
+    if not container:
+        pods = kubernp.k8s.list_pod(name=pod, as_dict=True)
+        container = pods[pod]["spec"]["containers"][0]["name"]
     stream = kubernp.k8s.pod_exec(
         pod_name=pod,
+        container=container,
         command=["/bin/bash"],
         stderr=True, stdin=True,
         stdout=True, tty=True,
