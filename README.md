@@ -77,17 +77,23 @@ drwxrwxrwx 3 root root    4096 Dec 27 08:31 .
 drwxr-xr-x 1 root root    4096 Dec 27 08:30 ..
 drwxr-xr-x 2  501 dialout 4096 Dec 27 08:31 scripts
 
-# you can also define affinity by providing the manifest part to be merged:
+# you can also define affinity by providing a inline JSON manifest part to be merged:
 
 >>> p1 = exp.create_pod(
         "pod1",
         image="debian:11",
         command=["/usr/bin/tail", "-f", "/dev/null"],
-        manifest={'spec': {"affinity": {'nodeAffinity': {'requiredDuringSchedulingIgnoredDuringExecution': {
-            'nodeSelectorTerms': [{'matchExpressions': [
-                {'key': 'kubernetes.io/hostname', 'operator': 'In', 'values': ['whx-rj01']}
-            ]
-        }]}}}}}
+        overrides={
+            "spec": {
+                "affinity": {
+                   "nodeAffinity": {'requiredDuringSchedulingIgnoredDuringExecution': {
+                      "nodeSelectorTerms": [{'matchExpressions': [
+                          {'key': 'kubernetes.io/hostname', 'operator': 'In', 'values': ['whx-rj01']}
+                      ]}]
+                   }}
+                }
+            }
+        }
     )
 ```
 

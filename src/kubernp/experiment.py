@@ -550,8 +550,8 @@ class Experiment:
                 }
             )
 
-        if "manifest" in kwargs and isinstance(kwargs["manifest"], dict):
-            deployment = recursive_merge(deployment, kwargs["manifest"])
+        if isinstance(kwargs.get("overrides"), dict):
+            deployment = recursive_merge(deployment, kwargs["overrides"])
 
         # inject an additional sidecar container to manage uploads, vxlan/l2tp
         # tunnels and other stuff
@@ -728,8 +728,8 @@ class Experiment:
                 }
             )
 
-        if "manifest" in kwargs and isinstance(kwargs["manifest"], dict):
-            pod = recursive_merge(pod, kwargs["manifest"])
+        if isinstance(kwargs.get("overrides"), dict):
+            pod = recursive_merge(pod, kwargs["overrides"])
 
         # inject an additional sidecar container to manage uploads, vxlan/l2tp
         # tunnels and other stuff
@@ -814,8 +814,8 @@ class Experiment:
                 "name": port.get("name", f"{container_port}-{protocol.lower()}"),
             })
 
-        if "manifest" in kwargs and isinstance(kwargs["manifest"], dict):
-            service = recursive_merge(service, kwargs["manifest"])
+        if isinstance(kwargs.get("overrides"), dict):
+            service = recursive_merge(service, kwargs["overrides"])
 
         k8s_result = self.k8s.create_from_dict(service)
 
@@ -859,8 +859,8 @@ class Experiment:
             pvc["spec"]["selector"].update(kwargs["selector"])
         if kwargs.get("labels"):
             pvc["metadata"]["labels"].update(kwargs["labels"])
-        if "manifest" in kwargs and isinstance(kwargs["manifest"], dict):
-            pvc = recursive_merge(pvc, kwargs["manifest"])
+        if isinstance(kwargs.get("overrides"), dict):
+            pvc = recursive_merge(pvc, kwargs["overrides"])
 
         k8s_result = self.k8s.create_from_dict(pvc)
 
