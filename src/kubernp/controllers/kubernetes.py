@@ -149,6 +149,13 @@ class K8sController():
             }
         self.nodes_last_updated = time.time()
 
+    def get_workers(self):
+        self.update_nodes()
+        return [
+            name for name, info in self.node_info.items()
+            if "worker" in info["roles"] and info["status"] == "Ready"
+        ]
+
     def get_node_ip(self, name):
         self.update_nodes()
         return self.node_info.get(name, {}).get("internal_ip", None)

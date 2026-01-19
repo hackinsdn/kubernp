@@ -119,8 +119,7 @@ class MininetSecController:
         pod_hash = uuid.uuid4().hex[:10]
         content = content.replace("${pod_hash}", pod_hash)
 
-        self.k8s.update_nodes()
-        allowed_nodes = [name for name, info in self.k8s.node_info.items() if "worker" in info["roles"]]
+        allowed_nodes = self.k8s.get_workers()
         content = content.replace("${allowed_nodes}", str(allowed_nodes))
         content = content.replace("${allowed_nodes_str}", ",".join(allowed_nodes))
         content = content.replace("${choose_one_node}", str(random.choice(allowed_nodes)))
