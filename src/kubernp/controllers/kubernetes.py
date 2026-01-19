@@ -100,8 +100,8 @@ class K8sController():
             resource_api = DynamicClient(self.k8s_client).resources.get(
                 api_version=api_version, kind=kind
             )
-        except:
-            self.log.error(f"Resource API not found for {api_version=} {kind=}")
+        except Exception as exc:
+            self.log.error(f"Resource API not found for {api_version=} {kind=} -- {exc}")
             return False
         resp = resource_api.get(name, namespace=self.namespace, **kwargs)
         return resp
