@@ -83,7 +83,7 @@ class Resource:
         stream = self.experiment.k8s.pod_exec(
             pod_name=pod_name,
             command=["/bin/sh", "-c", cmd],
-            container=self.name,
+            #container=self.name,
             stderr=True,
             stdin=False,
             stdout=True,
@@ -129,7 +129,7 @@ class Resource:
                 self.log.error(f"The provided 'pod_name' was not found.")
                 return None
         else:
-            pod_name = pods[0]["metadata"]["name"]
+            pod_name = next(iter(pods))
         return pod_name
 
     def publish(self, port, type="NodePort"):
