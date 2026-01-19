@@ -3,14 +3,14 @@
 ## Overview
 
 This is the implementation of a Python library, otherwise known as
-"KubeRNP", for interacting with RNP Kubernetes cluster.
+"KubeRNP", for interacting with a Kubernetes cluster.
 
-You can use this lib with a JupyterHub instance or directly our your
-Python SDE. Docs can be found here (TBD).
+You can use this lib with a JupyterHub instance or directly from your
+Python SDE.
 
 ## Installing KubeRNP
 
-You can install released versions of KubeRNP from PyPI
+You can install released versions of KubeRNP from PyPI.
 
 ```
 pip install kubernp
@@ -23,7 +23,7 @@ the git repository:
 pip install git+https://github.com/hackinsdn/kubernp@main
 ```
 
-Due to the number of dependencies, we recommend install KubeRNP in a
+Due to the number of dependencies, we recommend installing KubeRNP in a
 virtual environment.
 
 **NOTE**: This package has been tested and verified to work with Python
@@ -62,9 +62,9 @@ another_dep.cmd("whoami")
 kubernp.delete_experiment("another-existing-exp")
 ```
 
-### Example 01: upload files and using node affinity
+### Example 01: upload files and use node affinity
 
-Create a Pod with **nodeAffinity** and upload files
+Create a Pod with **nodeAffinity** and upload files.
 
 ```
 >>> from kubernp import KubeRNP
@@ -81,7 +81,7 @@ drwxrwxrwx 3 root root    4096 Dec 27 08:31 .
 drwxr-xr-x 1 root root    4096 Dec 27 08:30 ..
 drwxr-xr-x 2  501 dialout 4096 Dec 27 08:31 scripts
 
-# you can also define affinity by providing a inline JSON manifest part to be merged:
+# You can also define affinity by providing a inline JSON manifest part to be merged:
 
 >>> p1 = exp.create_pod(
         "pod1",
@@ -105,11 +105,11 @@ drwxr-xr-x 2  501 dialout 4096 Dec 27 08:31 scripts
 
 ### Example 2: IoT architecture for environmental monitoring
 
-A common IoT architecture for environmental monitoring involves devices like Raspberry Pi as sensor nodes, a Mosquitto MQTT broker for communication, a data processing/storage layer, and a Grafana dashboard for visualization. This example will demonstrate how to setup such scenario. The figure below ilustrates the example.
+A typical IoT architecture for environmental monitoring involves devices like Raspberry Pi as sensor nodes, a Mosquitto MQTT broker for communication, a data processing/storage layer, and a Grafana dashboard for visualization. This example will demonstrate how to set up such a scenario. The figure below illustrates the example.
 
 ![usecase-mqtt-grafana.png](./img/usecase-mqtt-grafana.png)
 
-One can leverage the KubeRNP library to setup the scenario above:
+One can leverage the KubeRNP library to set up the scenario above:
 
 ```
 $ python3
@@ -159,14 +159,14 @@ flaskapp = exp.create_deployment(
 
 exp.list_resources()
 
-# You will notice that the flaskapp Deployment has STATUS=0/1 which indicates the the Pod
+# You will notice that the flaskapp Deployment has STATUS=0/1, which indicates the Pod
 # has a problem and is not ready. Let's check the Pods for our Experiment:
 
 exp.list_pod()
 
 # You will notice that the flaskapp Pod has a CrashLoopBackOff state, which is not good!
-# The problem is that we didnt add the command/args, so the container wont do anything!
-# We left that on purpose to demonstrate the update of the deployment. Let's fix it:
+# The problem is that we didn't add the command/args, so that the container won't do anything!
+# We left that on purpose to demonstrate the deployment update. Let's fix it:
 
 k8s_obj = flaskapp.get_k8s()
 k8s_obj.spec.template.spec.containers[0].command = ["sleep"]
@@ -178,7 +178,7 @@ flaskapp.update_k8s(k8s_obj)
 exp.list_resources()
 
 # Now the flask-app Deployment should report STATUS=1/1!
-# Let's continue to setup the Flask-MQTT middleware
+# Let's continue to set up the Flask-MQTT middleware
 
 print(flaskapp.exec("pip install flask flask-mqtt"))
 
@@ -195,15 +195,15 @@ print(flaskapp.exec("ps aux"))
 # return to it soon
 ```
 
-Configure Grafana to use the MQTT data source: You will need to install the MQTT data source plugin and configure it within Grafana's UI.
+Configure Grafana to use the MQTT data source: Install the MQTT data source plugin and configure it in Grafana's UI.
 
 Open Grafana on your web browser and enter the URL https://grafana-mqtt.k8s-testing.amlight.net (created with the NGINX Ingress as requested with the `publish_http` argument). You should be able to login with credentials **admin** / **admin**.
 
 Install the MQTT Plugin: Navigate to Connections -> Add new connection -> Data sources and search for "MQTT". Click on Install to install the [official MQTT Datasource for Grafana](https://grafana.com/grafana/plugins/grafana-mqtt-datasource/).
 
-Once installed, configure the Data Source by clicking in "Add new data source": In the plugin settings, specify the MQTT broker's address as `tcp://srv-mosquitto-clusterip:1883`. The name `srv-mosquitto-clusterip` is the Kubernetes internal DNS to resolve the service name within the same namespace (the DNS resolver will complete the DNS hostname with the proper FQDN for the namespace and cluster domain).
+Once installed, configure the Data Source by clicking on "Add new data source": In the plugin settings, specify the MQTT broker's address as `tcp://srv-mosquitto-clusterip:1883`. The name `srv-mosquitto-clusterip` is the Kubernetes internal DNS name used to resolve the service name within the same namespace (the DNS resolver completes the DNS hostname with the proper FQDN for the namespace and cluster domain).
 
-You should see a message "MQTT Connected". The next step will be creating a very basic Dashboard to visualize data. Click on "building a dashboard" link. You will see a message "Start your new dashboard by adding a visualization", click on "Add visualization" and then choose the "grafana-mqtt-datasource (default)". On the query A, enter the Topic = "sensor/temperature" (this is just a topic name we will use for our test). Then save the Dashboard and click to visualize the Dashboard (tip: choose the "Last 30 seconds" on the time interval, to see the results more clearly).
+You should see a message "MQTT Connected". The next step will be creating a very basic Dashboard to visualize data. Click on the "building a dashboard" link. You will see a message "Start your new dashboard by adding a visualization", click on "Add visualization" and then choose the "grafana-mqtt-datasource (default)". For query A, enter Topic = "sensor/temperature" (this is just a topic name we will use for our test). Then save the Dashboard and click to visualize it (tip: choose "Last 30 seconds" for the time interval to see the results more clearly).
 
 Finally, let's simulate some IoT devices reporting data to the monitoring system we just configured. You can open a new Terminal and run the following command to simulate one device sending data to the system:
 
@@ -211,19 +211,19 @@ Finally, let's simulate some IoT devices reporting data to the monitoring system
 curl -X POST -H 'Content-type: application/json' http://flask-mqtt-middleware.k8s-testing.amlight.net/publish -d '{"topic": "sensor/temperature", "name": "temp_sensor", "value": 28}'
 ```
 
-Back to Grafana Dashboard, you should see a new measurement point being displayed!
+Back to the Grafana Dashboard, you should see a new measurement point being displayed!
 
-Run the following script to continuasly POST random data every one second:
+Run the following script to POST random data every one second continuously:
 
 ```
-python3 ~/work/kubernp/misc/mqtt-send-data.py http://flask-mqtt-middleware.k8s-testing.amlight.net/publish 
+python3 ~/work/kubernp/misc/mqtt-send-data.py http://flask-mqtt-middleware.k8s-testing.amlight.net/publish
 ```
 
 Now your Grafana Dashboard should look like:
 
 ![grafana-dashboard.png](./img/grafana-dashboard.png)
 
-To finish our experiment, we will delete the experiment to release all resources allocated. On the Python console:
+To finish our experiment, we will delete it to release all allocated resources. On the Python console:
 ```
 from kubernp import KubeRNP
 kubernp = KubeRNP(kubeconfig="~/.kube/config-other-cluster")
@@ -236,8 +236,7 @@ kubernp.delete_experiment("grafana-mqtt-exp")
 **Disclaimer:** this lab was heavily inspired from https://www.r-bloggers.com/2021/04/using-kubernetes-and-the-future-package-to-easily-parallelize-r-in-the-cloud/
 
 The primary goal of this lab is to demonstrate the integration of the `future` package
-in R with a Kubernetes cluster to facilitate scalable parallel computing. By
-transitioning from local processing to a distributed environment, the lab aims to show
+in R with a Kubernetes cluster to facilitate scalable parallel computing. By transitioning from local processing to a distributed environment, the lab aims to show
 how researchers can dynamically allocate resources in the Kubernetes cluster to meet the
 computational demands of a task. Ultimately, the objective is to establish a flexible,
 high-performance workflow that leverages Kubernetes infrastructure to overcome the hardware
@@ -249,27 +248,26 @@ The following image outlines the scenario and setup.
 
 In a Kubernetes environment, the actual work is handled by pods, which function like individual
 Linux containers. These pods live on nodes, which are virtual machines or physical servers provided
-by the cloud operator. A major benefit of this setup is resiliency: if a pod fails, Kubernetes is
+by the cloud operator. A significant benefit of this setup is resiliency: if a pod fails, Kubernetes is
 designed to automatically restart it, ensuring your computations continue without manual intervention.
-Futhermore, the most significant advantage is the massive performance gain achieved by moving from a
-single machine to a distributed cluster: by offloading R processing tasks to a Kubernetes cluster,
-you move beyond the physical limits of your local CPU and RAM.
+Furthermore, the most significant advantage is the massive performance gain achieved by moving from a
+single machine to a distributed cluster: by offloading R processing tasks to a Kubernetes cluster, you move beyond the physical limits of your local CPU and RAM.
 
-To make that happens, the R `future` package can treat each pod as an individual worker. Thus, tasks
-that would normally run sequentially on your laptop are executed simultaneously across dozens or
+To make that happen, the R `future` package can treat each pod as an individual worker. Thus, tasks
+that would typically run sequentially on your laptop are executed simultaneously across dozens or
 even hundreds of cloud instances.
 
 The basic steps are:
 
-1. Setup an experiment on Kubernetes leveraging the KubeRNP library
+1. Set up an experiment on Kubernetes leveraging the KubeRNP library
 2. Start the "pods of interest" using an example provided in this tutorial
 3. Connect to the RStudio Server running in the Kubernetes cluster from your Internet browser
 4. Prepare and run the experiment
 5. Finish the experiment and release the resources
 
-By "pods of interest" we mean: A) one (scheduler) pod for a main process that runs RStudio Server
+By "pods of interest" we mean: A) one (scheduler) pod for a primary process that runs RStudio Server
 and communicates with the workers; B) multiple (worker) pods, each with one R worker process to act
-as the workers. All pods will be running the docker image `rocker/rstudio:4.5.1` which is commonly
+as the workers. All pods will be running the Docker image `rocker/rstudio:4.5.1`, which is commonly
 used by the community.
 
 Let's get started:
@@ -289,14 +287,14 @@ We will start by checking the Kubernetes cluster to make sure the nodes are heal
 healthy, unhealthy = kubernp.healthcheck_nodes()
 ```
 
-Now that we have the list of healthy nodes, we can use the Kubernetes Node Affinity feature to run our experiment on that nodes:
+Now that we have the list of healthy nodes, we can use the Kubernetes Node Affinity feature to run our experiment on those nodes:
 
 ```
 exp.create_from_file("misc/r-future-cluster.yaml", node_affinity=healthy)
 exp.list_resources()
 ```
 
-You should see a list of resources that were created based on the manifest provided as example (`misc/r-future-cluster.yaml`):
+You should see a list of resources that were created based on the manifest provided as an example (`misc/r-future-cluster.yaml`):
 
 ```
 >>> exp.list_resources()
@@ -338,11 +336,9 @@ Next, we will create a plan for the experiment, leveraging the remote workers to
 plan(cluster, manual = TRUE, quiet = FALSE, workers=4)
 ```
 
-The parameter `manual = TRUE` above plays an important role to prevent the future package from
-attempting to launch new R processes on the workers. This is necessary because Kubernetes has
-already initialized these processes, which are currently idling and waiting to establish a
-connection with the primary RStudio Server instance. With the parameter `workers=4` we setup
-the plan to wait for 4 workers to connect. Finally, `quiet=FALSE` helps us seeing what is being
+The parameter `manual = TRUE` above plays a vital role in preventing the future package from
+attempting to launch new R processes on the workers. The parameter is necessary because Kubernetes has already initialized these processes, which are currently idling and waiting to establish a
+connection with the primary RStudio Server instance. With the parameter `workers=4`, we set up the plan to wait for 4 workers to connect. Finally, `quiet=FALSE` helps us see what is being
 executed.
 
 You should see an output like this:
@@ -360,7 +356,7 @@ You should see the number of workers equals 4 and the name of each pod:
 
 ![r-future-screen04.png](./img/r-future-screen04.png)
 
-Notice that the name of the workers match the name of the pods we created, you can confirm that by running the following command on the Python console we started earlier:
+Notice that the workers' names match the names of the pods we created. You can confirm that by running the following command on the Python console we started earlier:
 
 ```
 >>> exp.list_pod()
@@ -373,7 +369,7 @@ Pod/future-worker-64d8d4ffb8-spndk    Running   15m    ids-rj  10.50.24.42
 Pod/future-worker-64d8d4ffb8-xqjpt    Running   15m    ids-pb  10.50.63.154
 ```
 
-Next we will actually run the R experiment leveraging the distributed processing. For our demonstration, we will run a very simple calculation consisting of calculating the mean of 10 milion random numbers eithy times in parallel (we will also measure the time taken for comparison purposes). On your browser running RStudio:
+Next, we will actually run the R experiment leveraging the distributed processing. For our demonstration, we will run a straightforward calculation: the mean of 10 million random numbers, 80 times in parallel (we will also measure the time taken for comparison purposes). On your browser running RStudio:
 
 ```
 time_taken <- system.time(output <- future_sapply(seq_len(80), function(i) mean(rnorm(1e7)), future.seed = TRUE))
@@ -384,7 +380,7 @@ You should see this:
 
 ![r-future-screen05.png](./img/r-future-screen05.png)
 
-Finally, just for the sake of comparison, we can run the same experiment in a sequencial strategy to check how long it will take:
+Finally, just for the sake of comparison, we can run the same experiment in a sequential strategy to check how long it will take:
 
 ```
 plan(sequential)
@@ -396,7 +392,7 @@ Expected output:
 
 ![r-future-screen06.png](./img/r-future-screen06.png)
 
-You should see that the time is much higher, which makes sense, since we compared a distributed execution with 4 workers versus a sequential execution with just one workers. One could even explore more this experiment by combining `multisession` and `cluster` parallel strategies which will explore more cores available on each worker. 
+You should see that the time is much higher, which makes sense, since we compared a distributed execution with 4 workers versus a sequential execution with just one worker. One could even explore this experiment further by combining `multisession` and `cluster` parallel strategies, which will explore more cores available on each worker.
 
 Finally, we can finish the experiment and release the resources on the Python console:
 
@@ -406,7 +402,7 @@ exp.finish()
 
 ### Example 04: Running HackInSDN Labs with Mininet-Sec
 
-This example demonstrates how to run HackInSDN Labs with Mininet-Sec, VXLAN tunneis between pods and much more:
+This example demonstrates how to run HackInSDN Labs with Mininet-Sec, VXLAN tunnels between pods, and much more:
 
 ```
 $ python3
@@ -443,7 +439,7 @@ With the endpoints above, you can start using the HackInSDN/Mininet-Sec Lab by f
 
 ### Example 05: Running ContainerLab labs
 
-This example demonstrates how to run a distributed ContainerLab lab in the Kubernetes cluster leveraging the controller Clabernetes (your Kubernetes cluster has to be configured with Clabernetes):
+This example demonstrates how to run a distributed ContainerLab lab in the Kubernetes cluster, leveraging the controller Clabernetes (your Kubernetes cluster has to be configured with Clabernetes):
 
 ```
 $ python3
@@ -456,7 +452,7 @@ exp = kubernp.create_experiment()
 exp.create_from_file("misc/containerlab/lab1/test-simple.clab.yml")
 ```
 
-The commands above should run all the necessary steps to properly run a ContainerLab scenario into the Kubernetes cluster, including: uploading local files to the cluster, running clabverter to convert the ContainerLab topology into proper Kubernetes resources and actually provisioning the resources into Kubernetes. If you see an error/exception like this:
+The commands above should run all the necessary steps to properly run a ContainerLab scenario in the Kubernetes cluster, including uploading local files to the cluster, running clabverter to convert the ContainerLab topology into Kubernetes resources, and actually provisioning those resources. If you see an error/exception like this:
 ```
 >>> exp.create_from_file("misc/containerlab/lab1/test-simple.clab.yml")
 Traceback (most recent call last):
@@ -466,7 +462,7 @@ kubernetes.dynamic.exceptions.ResourceNotFoundError: No matches found for {'api_
 
 That means your Kubernetes cluster does not have Clabernetes controller installed, which is required to run ContainerLab fully integrated with Kubernetes (please refer to Example 07 to have some insights on how to run ContainerLab topology with a single Pod approach, which is not recommended!).
 
-Assuming your K8s cluster has Clabernetes, installed you can check the status of your experiment like:
+Assuming your K8s cluster has Clabernetes installed, you can check the status of your experiment like:
 
 ```
 >>> exp.list_resources()
@@ -487,7 +483,7 @@ Deployment/clab-a60d3bb297-h2           1/1       1m23s
 Deployment/topo-viewer-clab-a60d3bb297  1/1       1m23s
 ```
 
-As you can see above, you have all the resources required to run your Lab, specially the Deployments that represent the nodes of the topology: **h1** and **h2**. When using ContainerLab into Kubernetes, each Deployment will have a docker-in-docker environment, where the actual Pod is hosted as a Docker container inside those Deployments. Thus, you can run commands on **h1** node with the following APIs:
+As you can see above, you have all the resources required to run your Lab, specially the Deployments that represent the nodes of the topology: **h1** and **h2**. When using ContainerLab in Kubernetes, each Deployment runs in a Docker-in-Docker environment, with the actual Pod running as a Docker container within it. Thus, you can run commands on **h1** node with the following APIs:
 ```
 >>> dep_h1 = exp.get_resource("Deployment/clab-a60d3bb297-h1")
 >>> print(dep_h1.exec("docker ps"))
@@ -523,7 +519,7 @@ CONTAINER ID   IMAGE                     COMMAND           CREATED   STATUS     
 b5658e6cc406   ghcr.io/srl-labs/alpine   "/docker-ent.…"   4h ago    Up 4 hours   0.0.0.0:60000->21/tcp...  h1
 ```
 
-You can also view the topology using the "topology visualizer" container that was created. For that, you need to get the endpoint for the topology visualizer, back on the Python console:
+You can also view the topology using the "topology visualizer" container that was created. For that, you need to get the endpoint for the topology visualizer back on the Python console:
 ```
 >>> exp.list_endpoints()
 NAME                      ENDPOINT
@@ -531,14 +527,14 @@ NAME                      ENDPOINT
 http-topology-visualizer  190.103.184.201:31755
 ```
 
-Now you can open your Internet browser at `http://190.103.184.201:31755` (address from previous command). You should have acess to a topology similar to displayed below:
+Now you can open your Internet browser to `http://190.103.184.201:31755` (the address from the previous command). You should have access to a topology similar to that displayed below:
 
 ![example05-topo-view.png](./img/example05-topo-view.png)
 
 
 ### Example 06: Running ContainerLab labs with private images
 
-In many scenarios, the docker image used for your ContainerLab labs have many restrictions defined by the software vendor. Some of those restrictions can be addressed by using the `license` approach provided by ContainerLab, however you may have situations where you actually need to run a private Docker image on your lab and make sure no one else can run that image. This example demonstrates how to do it.
+In many scenarios, the Docker image used for your ContainerLab labs has many restrictions defined by the software vendor. Some of those restrictions can be addressed by using the `license` approach provided by ContainerLab. You may need to run a private Docker image in your lab and ensure no one else can run it. This example demonstrates how to do it.
 
 ```
 $ python3
@@ -550,13 +546,13 @@ exp = kubernp.create_experiment()
 
 ```
 
-We will first start by creating a Secret that stores our private Tokens to download the docker image from our registry:
+We will first start by creating a Secret that stores our private Tokens to download the Docker image from our registry:
 
 ```
 exp.create_secret_docker_registry(name="secret-img-pull", registry_url="docker.io", username="xptofoobar", password=None, secret_key="config.json")
 ```
 
-Most of the parameters above are self-explainatory, but one that deserves attention is the `password=None`. This parameter of course should contain the private Token, but when you pass the value `None` it will securely prompt your password on the command line.
+Most of the parameters above are self-explanatory, but one that deserves attention is the `password=None`. This parameter, of course, should contain the private Token, but when you pass the value `None`, it will securely prompt for your password on the command line.
 
 Next, you can load your ContainerLab topology and provide the Secret name created before:
 
@@ -564,13 +560,13 @@ Next, you can load your ContainerLab topology and provide the Secret name create
 exp.create_from_file("misc/containerlab/lab4-secrets/test-secrets.clab.yml", image_pull_secret="secret-img-pull")
 ```
 
-Please note that, currently, Clabernetes only supports one secret to be used for all private image. Although you can work around this by either i) designing your experiment so that all private images are hosted under the same secret, or ii) manually edit the Deployments and mount the specific secrets (not practical), we have plans to enhance this feature on future work. 
+Please note that, currently, Clabernetes only supports one secret to be used for all private images. Although you can work around this by either i) designing your experiment so that all private images are hosted under the same secret, or ii) manually editing the Deployments and mounting the specific secrets (not practical), we have plans to enhance this feature in future work.
 
-### Example 07: Running ContainerLab into Kubernetes as single pod scenario
+### Example 07: Running ContainerLab in Kubernetes as a single pod
 
-If you dont have Clabernetes controller installed on your Kubernetes cluster, you can still use ContainerLab on the cluster, however you wont benefit from the distributed environment to spread the topology among different nodes and pods. If that is fine for you, this example will guide you through the process.
+If you don't have Clabernetes controller installed on your Kubernetes cluster, you can still use ContainerLab on the cluster. Still, you won't benefit from the distributed environment, as the topology isn't spread across different nodes and pods. If that is fine for you, this example will guide you through the process.
 
-First step, as usual, is to setup an experiment:
+First step, as usual, is to set up an experiment:
 ```
 $ python3
 
@@ -580,7 +576,7 @@ kubernp = KubeRNP(kubeconfig="~/.kube/config-other-cluster")
 exp = kubernp.create_experiment()
 ```
 
-Next, you can create a Deployment to run your Lab. We will leverage the clabernetes docker image to run our Deployment just to simplicity. We will also publish a port that can be used to visualize the topology:
+Next, you can create a Deployment to run your Lab. We will leverage the Clabernetes Docker image to run our Deployment just for simplicity. We will also publish a port that can be used to visualize the topology:
 ```
 clab = exp.create_deployment(name="test-clab", image="ghcr.io/srl-labs/clabernetes/clabernetes-launcher:latest", privileged=True, command=["sh", "-c", "/clabernetes/manager launch; sleep infinity"], volumes=["/lib/modules:/lib/modules"], publish=[50080])
 ```
@@ -613,7 +609,7 @@ Now we will open a remote shell to the Pod and start our ContainerLab lab. For t
 python3 -m kubernp shell Pod/test-clab-686d9667ff-99hch
 ```
 
-You should now get connected to the Pod shell, from there you can navigate to the lab folder and start the lab:
+You should now get connected to the Pod shell. From there, you can navigate to the lab folder and start the lab:
 
 ```
 cd /uploads/lab2
@@ -633,7 +629,7 @@ clab graph
 ![example07-screen03.png](./img/example07-screen03.png)
 
 
-Go back to your Python console and get the correspondent endpoint to open the URL on the browser:
+Go back to your Python console and get the corresponding endpoint to open the URL in the browser:
 ```
 >>> exp.list_endpoints()
 NAME       ENDPOINT
@@ -645,7 +641,7 @@ And open your Internet browser with that URL:
 
 ![example07-screen04.png](./img/example07-screen04.png)
 
-After playing with your lab, you can finish it by first destroying the clab on the Pod shell (if your shell is still running the topology visualizer, you can just press CTRL+C):
+After playing with your lab, you can finish it by first destroying the lab on the Pod shell (if your shell is still running the topology visualizer, you can press CTRL+C):
 
 ```
 clab destroy
