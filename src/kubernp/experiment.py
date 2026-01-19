@@ -1461,11 +1461,32 @@ class Experiment:
         kwargs["ownership_selector"] = self.resource_names
         return self.k8s.list_pvc(name=name, **kwargs)
 
+    def list_persistentvolumeclaim(self, name=None, **kwargs):
+        """List Experiment PersistentVolumeClaims."""
+        return self.list_pvc(name=name, **kwargs)
+
     def get_resource(self, name_kind):
         if not (keys := self.resource_names.get(name_kind)):
-            self.log.error(f"Resource not found {name_kind}")
-            return
+            if not (resource := self.find_and_create_resource(name_kind)):
+                self.log.error(f"Resource not found {name_kind}")
+                return
+            return resource
         return self.resources[keys]["resource"]
+
+    def find_and_create_resource(self, name_kind):
+        parts = name_kind.split("/")
+        func = getattr(self, f"list_{parts[0].lower()}", None)
+        if not callable(func):
+            return None
+        if item := func(as_dict=True).get(parts[-1]):
+            return Resource(
+                experiment=self,
+                kind=parts[0],
+                name=parts[-1],
+                api_version=item["apiVersion"],
+                k8s_dict=item,
+            )
+        return None
 
     def delete_resource(self, name_kind, force=False):
         if not (keys := self.resource_names.get(name_kind)):
