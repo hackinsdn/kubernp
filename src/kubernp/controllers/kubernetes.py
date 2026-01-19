@@ -254,8 +254,9 @@ class K8sController():
             for col in extra_columns:
                 resource_table[col] = []
         owners = set(kwargs.pop("ownership_selector", []))
-        resources = self.get_resource(api_version, kind, name, **kwargs)
-        for item in resources.items:
+        response = self.get_resource(api_version, kind, name, **kwargs)
+        resources = [response] if name else response.items
+        for item in resources:
             if not self._check_ownership_filter(item, owners):
                 continue
             if kwargs.get("as_dict"):
