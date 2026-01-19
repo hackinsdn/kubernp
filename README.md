@@ -58,7 +58,10 @@ another_dep.cmd("whoami")
 kubernp.delete_experiment("another-existing-exp")
 ```
 
+### Example 01
+
 Create a Pod with **nodeAffinity** and upload files
+
 ```
 >>> from kubernp import KubeRNP
 >>> kubernp = KubeRNP()
@@ -88,7 +91,7 @@ drwxr-xr-x 2  501 dialout 4096 Dec 27 08:31 scripts
     )
 ```
 
-Example 2: IoT architecture for environmental monitoring
+### Example 2: IoT architecture for environmental monitoring
 
 A common IoT architecture for environmental monitoring involves devices like Raspberry Pi as sensor nodes, a Mosquitto MQTT broker for communication, a data processing/storage layer, and a Grafana dashboard for visualization. This example will demonstrate how to setup such scenario. The figure below ilustrates the example.
 
@@ -216,7 +219,7 @@ kubernp = KubeRNP(kubeconfig="~/.kube/config-other-cluster")
 kubernp.delete_experiment("grafana-mqtt-exp")
 ```
 
-Example 3: Leverage the Kubernetes cluster to run distributed processing in R
+### Example 3: Leverage the Kubernetes cluster to run distributed processing in R
 
 The primary goal of this lab is to demonstrate the integration of the `future` package
 in R with a Kubernetes cluster to facilitate scalable parallel computing. By
@@ -386,3 +389,169 @@ Finally, we can finish the experiment and release the resources on the Python co
 ```
 exp.finish()
 ```
+
+### Example 04: Running HackInSDN Labs with Mininet-Sec
+
+This example demonstrates how to run HackInSDN Labs with Mininet-Sec, VXLAN tunneis between pods and much more:
+
+```
+$ python3
+
+from kubernp import KubeRNP
+kubernp = KubeRNP(kubeconfig="~/.kube/config-other-cluster")
+
+exp = kubernp.create_experiment()
+
+exp.create_from_file("misc/mininet-sec/lab-scan-brute_force-dos.yaml")
+```
+
+After creating the experiment, we can check the resources and their status:
+```
+>>> exp.list_resources()
+NAME                               UID                                   AGE    STATUS
+---------------------------------  ------------------------------------  -----  --------
+Secret/sec-kubeconfig-730f705cde   dcffb34f-61c9-4554-9a70-cc6bfadd394c  1m48s  --
+Deployment/mininet-sec-730f705cde  e36c5fa5-4573-4a87-b60a-547434d36164  1m48s  1/1
+Service/mininet-sec-730f705cde     b1a4adaf-db3b-4b29-b415-64cfb2139773  1m47s  --
+```
+
+Next, you can get the endpoints so that you can start using them:
+```
+>>> exp.list_endpoints()
+NAME              ENDPOINT
+----------------  ---------------------
+http-mininet-sec  200.159.252.130:31110
+https-secflood    200.159.252.130:31645
+http-kytos-api    200.159.252.130:31010
+```
+
+With the endpoints above, you can start using the HackInSDN/Mininet-Sec Lab by following the instructions on the [step-by-step lab guide](https://github.com/hackinsdn/labs/blob/main/lab01-scan-brute_force-dos/README.md) and the resources hosted on the URLs above.
+
+### Example 05: Running ContainerLab labs
+
+This example demonstrates how to run a distributed ContainerLab lab in the Kubernetes cluster leveraging the controller Clabernetes (your Kubernetes cluster has to be configured with Clabernetes):
+
+```
+$ python3
+
+from kubernp import KubeRNP
+kubernp = KubeRNP(kubeconfig="~/.kube/config-other-cluster")
+
+exp = kubernp.create_experiment()
+
+exp.create_from_file("misc/containerlab/lab1/test-simple.clab.yml")
+```
+
+The commands above should run all the necessary steps to properly run a ContainerLab scenario into the Kubernetes cluster, including: uploading local files to the cluster, running clabverter to convert the ContainerLab topology into proper Kubernetes resources and actually provisioning the resources into Kubernetes. If you see an error/exception like this:
+```
+>>> exp.create_from_file("misc/containerlab/lab1/test-simple.clab.yml")
+Traceback (most recent call last):
+...
+kubernetes.dynamic.exceptions.ResourceNotFoundError: No matches found for {'api_version': 'clabernetes.containerlab.dev/v1alpha1', 'kind': 'Topology'}
+```
+
+That means your Kubernetes cluster does not have Clabernetes controller installed, which is required to run ContainerLab fully integrated with Kubernetes (please refer to Example 07 to have some insights on how to run ContainerLab topology with a single Pod approach, which is not recommended!).
+
+Assuming your K8s cluster has Clabernetes, installed you can check the status of your experiment like:
+
+```
+>>> exp.list_resources()
+NAME                                     UID                                   AGE    STATUS
+---------------------------------------  ------------------------------------  -----  --------
+ConfigMap/clab-a60d3bb297-h2-files       5fd07a50-9cb5-4b4d-80f5-992a527ef55c  6s     --
+ConfigMap/clab-a60d3bb297-h1-files       c923ce6b-fd11-419b-8713-9d5aa8e201fb  7s     --
+Topology/clab-a60d3bb297                 70176a5a-82e1-45ab-a626-e9fcce86b99d  7s     2/2
+Deployment/topo-viewer-clab-a60d3bb297   dc599408-2b68-4ba1-92f4-1b634df426ba  7s     1/1
+Service/topo-viewer-clab-a60d3bb297      d88d7833-8dca-4088-8ea6-8213370042a8  7s     --
+ConfigMap/topology-data-clab-a60d3bb297  053b4e19-6d5d-46d5-9c22-f3791bcf7e91  6s     --
+
+>>> exp.list_deployment()
+KIND/NAME                               STATUS    AGE
+--------------------------------------  --------  -----
+Deployment/clab-a60d3bb297-h1           1/1       1m23s
+Deployment/clab-a60d3bb297-h2           1/1       1m23s
+Deployment/topo-viewer-clab-a60d3bb297  1/1       1m23s
+```
+
+As you can see above, you have all the resources required to run your Lab, specially the Deployments that represent the nodes of the topology: **h1** and **h2**. When using ContainerLab into Kubernetes, each Deployment will have a docker-in-docker environment, where the actual Pod is hosted as a Docker container inside those Deployments. Thus, you can run commands on **h1** node with the following APIs:
+```
+>>> dep_h1 = exp.get_resource("Deployment/clab-a60d3bb297-h1")
+>>> print(dep_h1.exec("docker ps"))
+CONTAINER ID   IMAGE                     COMMAND           CREATED   STATUS       PORTS                     NAMES
+b5658e6cc406   ghcr.io/srl-labs/alpine   "/docker-ent.…"   4h ago    Up 4 hours   0.0.0.0:60000->21/tcp...  h1
+>>> print(dep_h1.exec("docker exec h1 ip link"))
+1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN mode DEFAULT group default qlen 1000
+    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+2: eth0@if7: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP mode DEFAULT group default
+    link/ether 3a:be:a5:d8:92:a2 brd ff:ff:ff:ff:ff:ff link-netnsid 0
+3: eth1.10@eth1: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 9500 qdisc noqueue state UP mode DEFAULT group default qlen 1000
+    link/ether aa:c1:ab:00:01:01 brd ff:ff:ff:ff:ff:ff
+5: eth1@if6: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 9500 qdisc noqueue state UP mode DEFAULT group default
+    link/ether aa:c1:ab:00:00:01 brd ff:ff:ff:ff:ff:ff link-netnsid 0
+```
+
+You can also leverage the KubeRNP library to open an interactive shell with the Pod (run the following commands in another terminal):
+```
+$ export KUBECONFIG=~/.kube/config-other-cluster
+
+$ python3 -m kubernp list pod
+KIND/NAME                                         STATUS    AGE    NODE         IP
+------------------------------------------------  --------  -----  -----------  ------------
+Pod/clab-a60d3bb297-h1-5fc48547c4-2rvq9           Running   4h     k8s-testing  10.97.108.72
+Pod/clab-a60d3bb297-h2-6474488559-f6zdz           Running   4h     k8s-testing  10.97.108.80
+Pod/topo-viewer-clab-a60d3bb297-54656bbd77-x57nb  Running   4h     k8s-testing  10.97.108.71
+
+$ python3 -m kubernp shell Pod/clab-a60d3bb297-h1-5fc48547c4-2rvq9
+
+[*]─[h1]─[/clabernetes]
+└──> docker ps
+CONTAINER ID   IMAGE                     COMMAND           CREATED   STATUS       PORTS                     NAMES
+b5658e6cc406   ghcr.io/srl-labs/alpine   "/docker-ent.…"   4h ago    Up 4 hours   0.0.0.0:60000->21/tcp...  h1
+```
+
+You can also view the topology using the "topology visualizer" container that was created. For that, you need to get the endpoint for the topology visualizer, back on the Python console:
+```
+>>> exp.list_endpoints()
+NAME                      ENDPOINT
+------------------------  ---------------------
+http-topology-visualizer  190.103.184.201:31755
+```
+
+Now you can open your Internet browser at `http://190.103.184.201:31755` (address from previous command). You should have acess to a topology similar to displayed below:
+
+![example05-topo-view.png](./img/example05-topo-view.png)
+
+
+### Example 06: Running ContainerLab labs with private images
+
+In many scenarios, the docker image used for your ContainerLab labs have many restrictions defined by the software vendor. Some of those restrictions can be addressed by using the `license` approach provided by ContainerLab, however you may have situations where you actually need to run a private Docker image on your lab and make sure no one else can run that image. This example demonstrates how to do it.
+
+```
+$ python3
+
+from kubernp import KubeRNP
+kubernp = KubeRNP(kubeconfig="~/.kube/config-other-cluster")
+
+exp = kubernp.create_experiment()
+
+```
+
+We will first start by creating a Secret that stores our private Tokens to download the docker image from our registry:
+
+```
+exp.create_secret_docker_registry(name="secret-img-pull", registry_url="docker.io", username="xptofoobar", password=None, secret_key="config.json")
+```
+
+Most of the parameters above are self-explainatory, but one that deserves attention is the `password=None`. This parameter of course should contain the private Token, but when you pass the value `None` it will securely prompt your password on the command line.
+
+Next, you can load your ContainerLab topology and provide the Secret name created before:
+
+```
+exp.create_from_file("misc/containerlab/lab4-secrets/test-secrets.clab.yml", image_pull_secret="secret-img-pull")
+```
+
+Please note that, currently, Clabernetes only supports one secret to be used for all private image. Although you can work around this by either i) designing your experiment so that all private images are hosted under the same secret, or ii) manually edit the Deployments and mount the specific secrets (not practical), we have plans to enhance this feature on future work. 
+
+### Example 07: Running ContainerLab into Kubernetes as single pod scenario
+
+TODO
