@@ -54,7 +54,7 @@ class Resource:
 
     def get_k8s_pods(self):
         if self.kind == "Pod":
-            return [self.k8s_dict]
+            return {self.name: self.k8s_dict}
         if self.kind == "Deployment":
             ownership_selector = set([f"{self.kind}/{self.name}"])
             for rs_name in self.experiment.k8s.list_replicaset(
@@ -71,11 +71,16 @@ class Resource:
             return pods
         return None
 
-    def exec(self, cmd, pod_name=None, output=False):
+    def exec(self, cmd, pod_name=None, container=None, output=False):
         pod_name = self.get_pod_name(pod_name)
         if not pod_name:
             self.log.error(f"Resource {self.kind}/{self.name} does not support exec")
             return
+        if container is None:
+            if self.kind == "Pod":
+                container = self.k8s_dict["spec"]["containers"][0]["name"]
+            else:
+                container = self.k8s_dict["spec"]["template"]["spec"]["containers"][0]["name"]
 
         cmd = " ".join(cmd) if isinstance(cmd, list) else cmd
         if cmd[-1] == "&":
@@ -83,7 +88,7 @@ class Resource:
         stream = self.experiment.k8s.pod_exec(
             pod_name=pod_name,
             command=["/bin/sh", "-c", cmd],
-            #container=self.name,
+            container=container,
             stderr=True,
             stdin=False,
             stdout=True,
