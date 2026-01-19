@@ -42,14 +42,18 @@ kubernp.show_config()
 exp = kubernp.create_experiment(name="my-webserver-experiment")
 testweb = exp.create_deployment(name="testweb", image="nginx:latest", publish=[80])
 testweb.exec("echo '<h1>Hello World</h1>' > /usr/share/nginx/html/index.html")
-endpoints = testweb.get_endpoints()
 
 # get URL from endpoints
+endpoints = testweb.get_endpoints()
 
+# using the requests lib to simulate a client browser
 import requests
 requests.get("http://" + endpoints["80-tcp"][0]).text
 
+# you can list the experiments:
 kubernp.list_experiments()
+
+# load another experiment and its resources:
 existing_exp = kubernp.load_experiment("another-existing-exp")
 existing_exp.list_resources()
 another_dep = existing_exp.get_resource("Deployment/another")
@@ -58,7 +62,7 @@ another_dep.cmd("whoami")
 kubernp.delete_experiment("another-existing-exp")
 ```
 
-### Example 01
+### Example 01: upload files and using node affinity
 
 Create a Pod with **nodeAffinity** and upload files
 
@@ -87,9 +91,11 @@ drwxr-xr-x 2  501 dialout 4096 Dec 27 08:31 scripts
             "spec": {
                 "affinity": {
                    "nodeAffinity": {'requiredDuringSchedulingIgnoredDuringExecution': {
-                      "nodeSelectorTerms": [{'matchExpressions': [
-                          {'key': 'kubernetes.io/hostname', 'operator': 'In', 'values': ['whx-rj01']}
-                      ]}]
+                      "nodeSelectorTerms": [{'matchExpressions': [{
+                          'key': 'kubernetes.io/hostname',
+                          'operator': 'In',
+                          'values': ['whx-rj01'],
+                      }]}]
                    }}
                 }
             }
@@ -226,6 +232,8 @@ kubernp.delete_experiment("grafana-mqtt-exp")
 ```
 
 ### Example 3: Leverage the Kubernetes cluster to run distributed processing in R
+
+**Disclaimer:** this lab was heavily inspired from https://www.r-bloggers.com/2021/04/using-kubernetes-and-the-future-package-to-easily-parallelize-r-in-the-cloud/
 
 The primary goal of this lab is to demonstrate the integration of the `future` package
 in R with a Kubernetes cluster to facilitate scalable parallel computing. By
