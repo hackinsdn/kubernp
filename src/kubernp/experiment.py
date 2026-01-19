@@ -482,6 +482,12 @@ class Experiment:
         if "node_affinity" in kwargs:
             self._setup_node_affinity(deployment, kwargs["node_affinity"])
 
+        if "volume" in kwargs:
+            self._setup_volume(deployment["spec"]["template"]["spec"], kwargs["volume"])
+
+        if "volumes" in kwargs:
+            self._setup_volume(deployment["spec"]["template"]["spec"], kwargs["volumes"])
+
         if kwargs.get("privileged"):
             recursive_merge(
                 deployment["spec"]["template"]["spec"]["containers"][0],
@@ -667,6 +673,12 @@ class Experiment:
 
         if "node_affinity" in kwargs:
             self._setup_node_affinity(pod, kwargs["node_affinity"])
+
+        if "volume" in kwargs:
+            self._setup_volume(pod["spec"], kwargs["volume"])
+
+        if "volumes" in kwargs:
+            self._setup_volume(pod["spec"], kwargs["volumes"])
 
         if kwargs.get("privileged"):
             recursive_merge(
@@ -1281,6 +1293,40 @@ class Experiment:
                     },
                 },
             }
+
+    def _setup_volume(self, resource_spec, volume):
+        """
+        Add a hostPath Directory volume into the resource dict spec. Example:
+            /host/path:/container/path
+        """
+        if isinstance(volume, str):
+            volume = [volume]
+        if not isinstance(volume, list):
+            self.log.error("Invalid volume: expected string or list of string")
+            return
+        if "volumes" not in resource_spec:
+            resource_spec["volumes"] = []
+        if "volumeMounts" not in resource_spec["containers"][0]:
+            resource_spec["containers"][0]["volumeMounts"] = []
+        for vol_str in volume:
+            parts = vol_str.split(":")
+            if len(parts) != 2:
+                self.log.error(f"Invalid volume '{vol_str}', expected: /host/path:/container/path")
+                continue
+            vol_name = "vol-" + uuid.uuid4().hex[:10]
+            volume = {
+                "name": vol_name,
+                "hostPath": {
+                    "path": parts[0],
+                    "type": "Directory",
+                },
+            }
+            volume_mount = {
+                "name": vol_name,
+                "mountPath": parts[1],
+            }
+            resource_spec["volumes"].append(volume)
+            resource_spec["containers"][0]["volumeMounts"].append(volume_mount)
 
     def _add_resource(self, api_version, kind, name, k8s_result):
         """
