@@ -482,6 +482,12 @@ class Experiment:
         if "node_affinity" in kwargs:
             self._setup_node_affinity(deployment, kwargs["node_affinity"])
 
+        if kwargs.get("privileged"):
+            recursive_merge(
+                deployment["spec"]["template"]["spec"]["containers"][0],
+                {"securityContext": {"privileged": True}},
+            )
+
         if "pvc" in kwargs:
             pvc_name = kwargs["pvc"].pop("name")
             pvc_mount_path = kwargs["pvc"].pop("mount_path")
