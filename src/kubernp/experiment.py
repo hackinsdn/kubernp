@@ -1515,6 +1515,13 @@ class Experiment:
                 recursive_merge(endpoints, resource.get_endpoints(), merge_list=True)
         return endpoints
 
+    def list_endpoints(self):
+        endpoint_dict = {"NAME": [], "ENDPOINT": []}
+        for k, v in self.get_endpoints().items():
+            endpoint_dict["NAME"].append(k)
+            endpoint_dict["ENDPOINT"].append(", ".join(v))
+        return show_table(endpoint_dict, output=self.kubernp.output)
+
     def list_events(self, all_resources=False):
         my_resources = set(self.resource_names.keys())
         for pod_name in self.list_pod(as_dict=True):
