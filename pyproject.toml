@@ -4,7 +4,7 @@ build-backend = "flit_core.buildapi"
 
 [project]
 name = "kubernp"
-version = "0.0.1"
+version = "1.0.0"
 description = "KubeRNP Python Client Library and CLI Extensions"
 authors = [
     { name = "Italo Valcy", email = "italovalcy@gmail.com" },    

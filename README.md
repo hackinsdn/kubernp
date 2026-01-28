@@ -71,7 +71,7 @@ Create a Pod with **nodeAffinity** and upload files.
 >>> kubernp = KubeRNP()
 >>> exp = kubernp.create_experiment()
 >>> pod1 = exp.create_pod("pod1", image="debian:11", command=["/usr/bin/tail", "-f", "/dev/null"], node_affinity="whx-ba")
->>> pod1.upload_files("~/work/scripts")
+>>> pod1.upload_files("./misc/scripts")
 Uploading: 100.00% (0.02 MB / 0.02 MB) @ 26.82 MB/s
 Upload completed! Saved to /uploads
 
