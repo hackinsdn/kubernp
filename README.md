@@ -57,7 +57,7 @@ kubernp.list_experiments()
 existing_exp = kubernp.load_experiment("another-existing-exp")
 existing_exp.list_resources()
 another_dep = existing_exp.get_resource("Deployment/another")
-another_dep.cmd("whoami")
+another_dep.exec("whoami")
 
 kubernp.delete_experiment("another-existing-exp")
 ```
@@ -75,7 +75,7 @@ Create a Pod with **nodeAffinity** and upload files.
 Uploading: 100.00% (0.02 MB / 0.02 MB) @ 26.82 MB/s
 Upload completed! Saved to /uploads
 
->>> print(p1.exec("ls -la /uploads"))
+>>> print(pod1.exec("ls -la /uploads"))
 total 12
 drwxrwxrwx 3 root root    4096 Dec 27 08:31 .
 drwxr-xr-x 1 root root    4096 Dec 27 08:30 ..
@@ -83,8 +83,8 @@ drwxr-xr-x 2  501 dialout 4096 Dec 27 08:31 scripts
 
 # You can also define affinity by providing a inline JSON manifest part to be merged:
 
->>> p1 = exp.create_pod(
-        "pod1",
+>>> p2 = exp.create_pod(
+        "pod2",
         image="debian:11",
         command=["/usr/bin/tail", "-f", "/dev/null"],
         overrides={
@@ -107,7 +107,7 @@ drwxr-xr-x 2  501 dialout 4096 Dec 27 08:31 scripts
 
 A typical IoT architecture for environmental monitoring involves devices like Raspberry Pi as sensor nodes, a Mosquitto MQTT broker for communication, a data processing/storage layer, and a Grafana dashboard for visualization. This example will demonstrate how to set up such a scenario. The figure below illustrates the example.
 
-![usecase-mqtt-grafana.png](./img/usecase-mqtt-grafana.png)
+![usecase-mqtt-grafana.png](https://raw.githubusercontent.com/hackinsdn/kubernp/main/img/usecase-mqtt-grafana.png)
 
 One can leverage the KubeRNP library to set up the scenario above:
 
@@ -221,7 +221,7 @@ python3 ~/work/kubernp/misc/mqtt-send-data.py http://flask-mqtt-middleware.k8s-t
 
 Now your Grafana Dashboard should look like:
 
-![grafana-dashboard.png](./img/grafana-dashboard.png)
+![grafana-dashboard.png](https://raw.githubusercontent.com/hackinsdn/kubernp/main/img/grafana-dashboard.png)
 
 To finish our experiment, we will delete it to release all allocated resources. On the Python console:
 ```
@@ -244,7 +244,7 @@ limitations of a single machine.
 
 The following image outlines the scenario and setup.
 
-![r-future-cluster.png](./img/r-future-cluster.png)
+![r-future-cluster.png](https://raw.githubusercontent.com/hackinsdn/kubernp/main/img/r-future-cluster.png)
 
 In a Kubernetes environment, the actual work is handled by pods, which function like individual
 Linux containers. These pods live on nodes, which are virtual machines or physical servers provided
@@ -317,11 +317,11 @@ Run the following command to get the URL that you will open your Internet browse
 
 Open the address returned (i.e, `http://200.159.252.130:32744`) on your Internet browser. If asked for username and password you can use: username - **rstudio** and password - **future**. You should see an image like this:
 
-![r-future-screen01.png](./img/r-future-screen01.png)
+![r-future-screen01.png](https://raw.githubusercontent.com/hackinsdn/kubernp/main/img/r-future-screen01.png)
 
 And after login, you should see this:
 
-![r-future-screen02.png](./img/r-future-screen02.png)
+![r-future-screen02.png](https://raw.githubusercontent.com/hackinsdn/kubernp/main/img/r-future-screen02.png)
 
 Now, on the RStudio console, let's start by importing the libraries we will use:
 
@@ -343,7 +343,7 @@ executed.
 
 You should see an output like this:
 
-![r-future-screen03.png](./img/r-future-screen03.png)
+![r-future-screen03.png](https://raw.githubusercontent.com/hackinsdn/kubernp/main/img/r-future-screen03.png)
 
 After a few seconds, you can run the following command to check if all workers are running:
 
@@ -354,7 +354,7 @@ future_sapply(seq_len(nbrOfWorkers()), function(i) Sys.info()[["nodename"]])
 
 You should see the number of workers equals 4 and the name of each pod:
 
-![r-future-screen04.png](./img/r-future-screen04.png)
+![r-future-screen04.png](https://raw.githubusercontent.com/hackinsdn/kubernp/main/img/r-future-screen04.png)
 
 Notice that the workers' names match the names of the pods we created. You can confirm that by running the following command on the Python console we started earlier:
 
@@ -378,7 +378,7 @@ print(time_taken)
 
 You should see this:
 
-![r-future-screen05.png](./img/r-future-screen05.png)
+![r-future-screen05.png](https://raw.githubusercontent.com/hackinsdn/kubernp/main/img/r-future-screen05.png)
 
 Finally, just for the sake of comparison, we can run the same experiment in a sequential strategy to check how long it will take:
 
@@ -390,7 +390,7 @@ print(time_taken2)
 
 Expected output:
 
-![r-future-screen06.png](./img/r-future-screen06.png)
+![r-future-screen06.png](https://raw.githubusercontent.com/hackinsdn/kubernp/main/img/r-future-screen06.png)
 
 You should see that the time is much higher, which makes sense, since we compared a distributed execution with 4 workers versus a sequential execution with just one worker. One could even explore this experiment further by combining `multisession` and `cluster` parallel strategies, which will explore more cores available on each worker.
 
@@ -529,7 +529,7 @@ http-topology-visualizer  190.103.184.201:31755
 
 Now you can open your Internet browser to `http://190.103.184.201:31755` (the address from the previous command). You should have access to a topology similar to that displayed below:
 
-![example05-topo-view.png](./img/example05-topo-view.png)
+![example05-topo-view.png](https://raw.githubusercontent.com/hackinsdn/kubernp/main/img/example05-topo-view.png)
 
 
 ### Example 06: Running ContainerLab labs with private images
@@ -601,7 +601,7 @@ clab.upload_files("misc/containerlab/lab2")
 
 Here is an example of the expected output so far:
 
-![example07-screen01.png](./img/example07-screen01.png)
+![example07-screen01.png](https://raw.githubusercontent.com/hackinsdn/kubernp/main/img/example07-screen01.png)
 
 Now we will open a remote shell to the Pod and start our ContainerLab lab. For that, open a new terminal window/tab and run the following command (**Notice:** please use the Pod name as displayed on the `list_pod` output before):
 
@@ -618,7 +618,7 @@ clab deploy
 
 If all goes well, you should see the following output:
 
-![example07-screen02.png](./img/example07-screen02.png)
+![example07-screen02.png](https://raw.githubusercontent.com/hackinsdn/kubernp/main/img/example07-screen02.png)
 
 Then you can start the topology visualizer:
 
@@ -626,7 +626,7 @@ Then you can start the topology visualizer:
 clab graph
 ```
 
-![example07-screen03.png](./img/example07-screen03.png)
+![example07-screen03.png](https://raw.githubusercontent.com/hackinsdn/kubernp/main/img/example07-screen03.png)
 
 
 Go back to your Python console and get the corresponding endpoint to open the URL in the browser:
@@ -639,7 +639,7 @@ NAME       ENDPOINT
 
 And open your Internet browser with that URL:
 
-![example07-screen04.png](./img/example07-screen04.png)
+![example07-screen04.png](https://raw.githubusercontent.com/hackinsdn/kubernp/main/img/example07-screen04.png)
 
 After playing with your lab, you can finish it by first destroying the lab on the Pod shell (if your shell is still running the topology visualizer, you can press CTRL+C):
 
@@ -647,7 +647,7 @@ After playing with your lab, you can finish it by first destroying the lab on th
 clab destroy
 ```
 
-![example07-screen05.png](./img/example07-screen05.png)
+![example07-screen05.png](https://raw.githubusercontent.com/hackinsdn/kubernp/main/img/example07-screen05.png)
 
 Back to the Python console, you can finish the experiment to release all resources from the Kubernetes cluster:
 

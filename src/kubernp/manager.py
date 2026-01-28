@@ -172,7 +172,7 @@ class KubeRNPManager:
         except:
             pass
 
-    def healthcheck_nodes(self, image="busybox:1.37", command=["sleep", "infinity"], test_cmd="wget http://ifconfig.io/ip -O -", expect_func=None, timeout=30, nodes=None):
+    def healthcheck_nodes(self, image="busybox:1.37", command=["sleep", "infinity"], test_cmd="wget http://ifconfig.io/ip -O -", expect_func=None, timeout=30, nodes=None, quiet=False):
         """
         Run a health check into Kubernetes nodes and return their status.
 
@@ -187,7 +187,15 @@ class KubeRNPManager:
             compared with result from test_cmd to determine node is healthy.
         :timeout: timeout to wait for the Pod to be running and for test_cmd to
             execute.
+        :nodes: list of node names to check. If not provided, defaults to worker
+            nodes from the current cluster.
+        :quiet: dont print messages about what steps are being executed.
         """
+
+        def print_cond(msg):
+            if not quiet:
+                print(msg)
+
         health_nodes = []
         reason = {}
         self.k8s.update_nodes()
@@ -202,6 +210,7 @@ class KubeRNPManager:
         exp = self.create_experiment()
         pods = {}
         for node in nodes:
+            print_cond(f"Healthcheck #1: creating pod on node {node}")
             try:
                 pods[node] = exp.create_pod(
                     name=f"pod-test-{node}-{exp.uid[:8]}",
@@ -210,32 +219,39 @@ class KubeRNPManager:
                     node_affinity=node
                 )
             except Exception as exc:
+                print_cond(f"-> Failed to create pod on node {node}")
                 reason[node] = f"Failed to create test pod: {exc}"
 
         running_pods = []
         for node in pods:
+            print_cond(f"Healthcheck #2: wait pod running {node=} {timeout=}")
             is_running, msg = pods[node].wait_running(timeout=timeout)
             if is_running:
                 running_pods.append(node)
             else:
+                print_cond(f"-> pod not running {node=} {msg=}")
                 reason[node] = msg
 
         results = {}
         extra_info = {}
         for n in running_pods:
             extra_info[n] = pods[n].get_k8s()
+            print_cond(f"Healthcheck #3: exec test command node={n}")
             try:
                 results[n] = pods[n].exec(f"timeout {timeout} {test_cmd}").strip()
             except Exception as exc:
+                print_cond(f"-> failed to run test command node={n} {exc=}")
                 reason[n] = f"Failed to exec test pod commands on node={n}: {exc}"
 
         if expect_func is None:
             expect_func = lambda n: self.k8s.node_info[n]["internal_ip"]
         for node, result in results.items():
+            print_cond(f"Healthcheck #4: check result from test cmd {node=}")
             expected = expect_func(node)
             if result == expected:
                 health_nodes.append(node)
             else:
+                print_cond(f"-> mismatch result from {node=}")
                 reason[node] = f"Mismatch on test output: {expected=} {result=}. Extra info: {extra_info[node]}"
 
         self.delete_experiment(exp)
