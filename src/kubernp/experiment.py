@@ -659,6 +659,7 @@ class Experiment:
                     {
                         "name": name,
                         "image": kwargs.get("image", self.default_image),
+                        "imagePullPolicy": kwargs.get("imagePullPolicy", "Always"),
                         "ports": [],
                     },
                 ],

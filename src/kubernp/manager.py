@@ -172,7 +172,7 @@ class KubeRNPManager:
         except:
             pass
 
-    def healthcheck_nodes(self, image="busybox:1.37", command=["sleep", "infinity"], test_cmd="wget http://ifconfig.io/ip -O -", expect_func=None, timeout=30, nodes=None, quiet=False):
+    def healthcheck_nodes(self, image="hackinsdn/alpine:3.23", command=["sleep", "infinity"], test_cmd="curl -4 http://ifconfig.io/ip", expect_func=None, timeout=60, nodes=None, quiet=False):
         """
         Run a health check into Kubernetes nodes and return their status.
 
@@ -252,7 +252,7 @@ class KubeRNPManager:
                 health_nodes.append(node)
             else:
                 print_cond(f"-> mismatch result from {node=}")
-                reason[node] = f"Mismatch on test output: {expected=} {result=}. Extra info: {extra_info[node]}"
+                reason[node] = f"Mismatch on test output: {expected=} {result=} error={reason.get(node)}. Extra info: {extra_info[node]}"
 
         self.delete_experiment(exp)
 

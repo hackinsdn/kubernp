@@ -435,7 +435,31 @@ https-secflood    200.159.252.130:31645
 http-kytos-api    200.159.252.130:31010
 ```
 
-With the endpoints above, you can start using the HackInSDN/Mininet-Sec Lab by following the instructions on the [step-by-step lab guide](https://github.com/hackinsdn/labs/blob/main/lab01-scan-brute_force-dos/README.md) and the resources hosted on the URLs above.
+With the endpoints above, you can start using the HackInSDN/Mininet-Sec Lab by either a) following the instructions on the [step-by-step lab guide](https://github.com/hackinsdn/labs/blob/main/lab01-scan-brute_force-dos/README.md) and the resources hosted on the URLs above or b) continue to use the Python/notebook lab-as-code style above to interact with the lab content, for instance:
+
+```
+>>> mnsec = exp.get_resource("Deployment/mininet-sec-730f705cde")
+
+>>> print(mnsec.exec("mnsecx h301 ping -c 4 172.16.50.1"))
+PING 172.16.50.1 (172.16.50.1) 56(84) bytes of data.
+64 bytes from 172.16.50.1: icmp_seq=1 ttl=61 time=0.188 ms
+64 bytes from 172.16.50.1: icmp_seq=2 ttl=61 time=0.179 ms
+64 bytes from 172.16.50.1: icmp_seq=3 ttl=61 time=0.112 ms
+64 bytes from 172.16.50.1: icmp_seq=4 ttl=61 time=0.216 ms
+
+--- 172.16.50.1 ping statistics ---
+4 packets transmitted, 4 received, 0% packet loss, time 3056ms
+rtt min/avg/max/mdev = 0.112/0.173/0.216/0.038 ms
+
+>>> print(mnsec.exec("mnsecx h301 traceroute -n 172.16.50.1"))
+traceroute to 172.16.50.1 (172.16.50.1), 30 hops max, 60 byte packets
+ 1  192.168.30.254  0.108 ms  0.031 ms  0.027 ms
+ 2  10.30.0.1  0.055 ms  0.033 ms  0.032 ms
+ 3  10.30.50.2  0.065 ms  0.040 ms  0.040 ms
+ 4  172.16.50.1  0.094 ms  0.060 ms  0.058 ms
+
+....
+```
 
 ### Example 05: Running ContainerLab labs
 
