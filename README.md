@@ -5,8 +5,7 @@
 This is the implementation of a Python library, otherwise known as
 "KubeRNP", for interacting with a Kubernetes cluster.
 
-You can use this lib with a JupyterHub instance or directly from your
-Python SDE.
+You can use this lib with a JupyterHub instance, fully integrated to [HackInSDN platform](https://hackinsdn.ufba.br) by combining the [existing lab manifest and guidelines](https://github.com/hackinsdn/labs), or directly from your Python SDE.
 
 ## Installing KubeRNP
 
