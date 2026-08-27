@@ -7,21 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [x.x.x] - Unreleased
 
-### Added
-
 - TODO
 
-### Fixed
+## [1.0.1] - 2026-08-27
 
-- TODO
-
-### Changed
-
-- TODO
-
-### Removed
-
-- TODO
+- Improved documentation and readme with examples from HackInSDN
+- Added support for image pull policy
+- Changed healthcheck default docker image to avoid IPv6 errors with `busybox/alpine` and wget
 
 ## [1.0.0] - 2025-12-19
 
